@@ -16,3 +16,4 @@ playwright/.cache/
 # --- OS / editor noise ---
 .DS_Store
 *.log
+.claude/
