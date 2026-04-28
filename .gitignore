@@ -1,0 +1,18 @@
+# --- Dependencies ---
+node_modules/
+
+# --- Test artefacts ---
+test-results/
+playwright-report/
+playwright/.cache/
+
+# --- Transient screenshots ---
+# Ad-hoc screenshots dropped at the repo root by Playwright tests
+# (`page.screenshot({ path: 'Foo.png' })`) and reference grabs the user
+# pastes in mid-session. Anything intended to be permanent should live
+# under `docs/` or `tests/.../-snapshots/` (Playwright manages those).
+/*.png
+
+# --- OS / editor noise ---
+.DS_Store
+*.log
