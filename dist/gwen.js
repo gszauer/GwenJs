@@ -1469,12 +1469,12 @@ void main() {
     textDisabled: "#808080",
     textOnDark: "#ffffff",
     accent: "#4890c4",
-    // Tab variants — derived from the panel/button palette so the tab
-    // strip blends cleanly with the rest of the chrome.
-    tabActiveTop: "#f0f0f0",
-    tabActiveBot: "#d8d8d8",
-    tabInactiveTop: "#c8c8c8",
-    tabInactiveBot: "#a8a8a8",
+    // Tab variants — tuned so active tabs sit clearly above the recessed
+    // dock strip without making the light theme feel heavy.
+    tabActiveTop: "#f8f8f8",
+    tabActiveBot: "#e2e2e2",
+    tabInactiveTop: "#d8d8d8",
+    tabInactiveBot: "#bdbdbd",
     // Tree
     treeLines: "#909090",
     treeNormal: "#000000",
@@ -2210,16 +2210,7 @@ void main() {
       }
       case "Tab.HeaderBar": {
         drawPatch(ctx, x, y, w, h, {
-          // Was hardcoded #e8e8e8 / #cfcfcf. Pulling from the palette so
-          // dark mode picks up the darker tab-header gradient.
-          fill: vGradient(
-            ctx,
-            x,
-            y,
-            h,
-            darkAware(activePalette.tabActiveTop, activePalette.panelDark),
-            darkAware(activePalette.tabActiveBot, activePalette.panelFill)
-          ),
+          fill: vGradient(ctx, x, y, h, activePalette.panelDark, activePalette.panelFill),
           stroke: activePalette.panelBorder
         });
         return;
@@ -2230,7 +2221,7 @@ void main() {
       case "Tab.Right.Active": {
         drawPatch(ctx, x, y, w, h, {
           fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
-          stroke: activePalette.panelBorder,
+          stroke: darkAware(activePalette.buttonBorder, activePalette.panelBorder),
           borderRadius: 3
         });
         return;
@@ -2241,7 +2232,7 @@ void main() {
       case "Tab.Right.Inactive": {
         drawPatch(ctx, x, y, w, h, {
           fill: vGradient(ctx, x, y, h, activePalette.tabInactiveTop, activePalette.tabInactiveBot),
-          stroke: activePalette.panelBorder,
+          stroke: darkAware(activePalette.buttonBorder, activePalette.panelBorder),
           borderRadius: 3
         });
         return;
@@ -8324,6 +8315,15 @@ void main() {
     onKeyRight(down) {
       if (down) this.moveSelection(1);
       return true;
+    }
+    renderFocus(skin) {
+      const canvas = this.getCanvas();
+      if (!canvas || canvas.keyboardFocus !== this) return;
+      if (!this.isTabable()) return;
+      const options = this.getOptions();
+      const focusRow = this._selected ?? options[0] ?? null;
+      if (!focusRow) return;
+      skin.drawKeyboardHighlight(this, focusRow.getBounds(), 0);
     }
     getOptions() {
       return this.children.filter((c) => c instanceof LabeledRadioButton);

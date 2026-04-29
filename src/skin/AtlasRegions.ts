@@ -379,12 +379,12 @@ export const LIGHT_PALETTE: Palette = Object.freeze({
 
   accent: '#4890c4',
 
-  // Tab variants — derived from the panel/button palette so the tab
-  // strip blends cleanly with the rest of the chrome.
-  tabActiveTop: '#f0f0f0',
-  tabActiveBot: '#d8d8d8',
-  tabInactiveTop: '#c8c8c8',
-  tabInactiveBot: '#a8a8a8',
+  // Tab variants — tuned so active tabs sit clearly above the recessed
+  // dock strip without making the light theme feel heavy.
+  tabActiveTop: '#f8f8f8',
+  tabActiveBot: '#e2e2e2',
+  tabInactiveTop: '#d8d8d8',
+  tabInactiveBot: '#bdbdbd',
 
   // Tree
   treeLines: '#909090',

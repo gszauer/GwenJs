@@ -14,6 +14,7 @@ import { LabeledRadioButton } from './RadioButton';
 import { Signal, eventInfo, type EventInfo } from '../core/Events';
 import { Pos } from '../core/Align';
 import { margin } from '../core/Structures';
+import type { Skin } from '../skin/Skin';
 
 export class RadioButtonController extends Base {
   readonly onSelectionChange = new Signal<EventInfo>();
@@ -72,6 +73,17 @@ export class RadioButtonController extends Base {
   override onKeyRight(down: boolean): boolean {
     if (down) this.moveSelection(1);
     return true;
+  }
+
+  override renderFocus(skin: Skin): void {
+    const canvas = this.getCanvas();
+    if (!canvas || canvas.keyboardFocus !== this) return;
+    if (!this.isTabable()) return;
+
+    const options = this.getOptions();
+    const focusRow = this._selected ?? options[0] ?? null;
+    if (!focusRow) return;
+    skin.drawKeyboardHighlight(this, focusRow.getBounds(), 0);
   }
 
   private getOptions(): LabeledRadioButton[] {

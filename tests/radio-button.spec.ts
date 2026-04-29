@@ -454,4 +454,44 @@ test.describe('T103 RadioButton', () => {
     expect(result.changeCount).toBe(2);
     expect(result.callerIsRBC).toBe(true);
   });
+
+  // =========================================================================
+  // 16. RadioButtonController focus paints the active row, not the container
+  // =========================================================================
+
+  test('16 — controller focus highlight draws around selected row, not the whole group', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const rbc = new G.RadioButtonController(canvas);
+      rbc.setBounds(10, 10, 200, 80);
+      rbc.addOption('Alpha', 'alpha');
+      const beta = rbc.addOption('Beta', 'beta');
+      beta.select();
+      rbc.focus();
+
+      let drawn: any = null;
+      const skin = (window as any).gwenSkin;
+      const original = skin.drawKeyboardHighlight;
+      skin.drawKeyboardHighlight = (_ctrl: any, rect: any, offset: number) => {
+        drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, offset };
+      };
+
+      rbc.renderFocus(skin);
+      skin.drawKeyboardHighlight = original;
+
+      const rowBounds = beta.getBounds();
+      const groupBounds = rbc.getRenderBounds();
+      const ret = {
+        drawn,
+        row: { x: rowBounds.x, y: rowBounds.y, w: rowBounds.w, h: rowBounds.h, offset: 0 },
+        group: { x: groupBounds.x, y: groupBounds.y, w: groupBounds.w, h: groupBounds.h, offset: 3 },
+      };
+      rbc.dispose();
+      return ret;
+    });
+
+    expect(result.drawn).toEqual(result.row);
+    expect(result.drawn).not.toEqual(result.group);
+  });
 });

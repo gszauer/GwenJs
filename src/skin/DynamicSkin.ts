@@ -799,16 +799,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     }
     case 'Tab.HeaderBar': {
       drawPatch(ctx, x, y, w, h, {
-        // Was hardcoded #e8e8e8 / #cfcfcf. Pulling from the palette so
-        // dark mode picks up the darker tab-header gradient.
-        fill: vGradient(
-          ctx,
-          x,
-          y,
-          h,
-          darkAware(activePalette.tabActiveTop, activePalette.panelDark),
-          darkAware(activePalette.tabActiveBot, activePalette.panelFill),
-        ),
+        fill: vGradient(ctx, x, y, h, activePalette.panelDark, activePalette.panelFill),
         stroke: activePalette.panelBorder,
       });
       return;
@@ -819,7 +810,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Tab.Right.Active': {
       drawPatch(ctx, x, y, w, h, {
         fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
-        stroke: activePalette.panelBorder,
+        stroke: darkAware(activePalette.buttonBorder, activePalette.panelBorder),
         borderRadius: 3,
       });
       return;
@@ -830,7 +821,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Tab.Right.Inactive': {
       drawPatch(ctx, x, y, w, h, {
         fill: vGradient(ctx, x, y, h, activePalette.tabInactiveTop, activePalette.tabInactiveBot),
-        stroke: activePalette.panelBorder,
+        stroke: darkAware(activePalette.buttonBorder, activePalette.panelBorder),
         borderRadius: 3,
       });
       return;
