@@ -124,13 +124,17 @@ Each row is one unit of work. The orchestrator picks the lowest-ID `pending` tas
 | ID   | Title                                                      | Deps              | Status  |
 |------|------------------------------------------------------------|-------------------|---------|
 | T700 | `FilePicker` rewrite - File-blob API, web-native dialog, clear/browse buttons; updates `PropertyFile` to expose `getFile()`; ImagePanel demo gains custom-image loader. Replaces the original stub from T500. | T500, T407, T111  | done    |
+| T701 | UX polish pass - tooltip rendering fix; Slider focus ring redesign (12 px, drawn beneath the nib); CollapsibleCategory header (left-align + chevron). | -                 | done    |
+| T702 | Docking modernization - DockedTabControl tabs-in-header layout (strip becomes the title bar with whole-dock drag), single-tab drag = whole-dock promotion, re-dock bug sweep (3 fixes). | T309, T211, T212  | done    |
+| T703 | `ActionBar` control - flexible horizontal / vertical toolbar (`addButton` / `addSeparator` / `addItem`), `setVertical`, `setColumns(n)` for multi-column tool palettes, `setRadioMode(true)` for single-active selection, `addItem` auto-centers non-square widgets. | T101, T204        | done    |
+| T704 | Right-click context menus - `Base.setContextMenu(menu)` + virtual `onContextMenuRequest(x, y)`; Canvas walks the parent chain to open the first non-null menu, with canvas-level globals as fallback. | T202              | done    |
 
 ## Running total
 - **Infrastructure:** 11 tasks
 - **Controls:** 48 tasks (across Phases 1-5)
 - **Release:** 9 tasks
-- **Post-1.0:** 1 task
-- **Grand total:** 69 tasks
+- **Post-1.0:** 5 tasks
+- **Grand total:** 73 tasks
 
 ## Notes for the orchestrator
 - `deps` is **reverse-blocking**: a task can start only when every listed dep is `done`.
