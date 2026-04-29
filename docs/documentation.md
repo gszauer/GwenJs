@@ -116,7 +116,12 @@ right.getTabControl()?.addPage('Inspector');
 dock.getTabControl()?.addPage('Scene');   // fill area
 ```
 
-Dragging a tab button from any `DockedTabControl` over another dock highlights a drop zone; releasing reparents the tab. Child docks hide themselves when emptied and reappear when a tab is dropped on their edge.
+Each docked panel's tab strip docks **Top** and renders as a gradient header — the strip itself is the title bar with the tab buttons embedded directly inside it (VS-Code / browser style). Two drag affordances:
+
+- **Tab button drag** (`TabButtonMove`). Grabbing a `TabButton` and dropping it onto another dock's edge / fill reparents that single tab.
+- **Whole-dock drag** (`TabWindowMove`). Grabbing empty space on the strip — anywhere not covered by a tab — drags the entire `DockedTabControl` and its tabs as a unit.
+
+Hovering with either drag in flight paints a directional highlight inside the receiving dock so the user can preview which slot will absorb the drop. Child docks hide themselves when emptied and reappear when a tab is dropped on their edge.
 
 ## 7. Custom rendering
 
@@ -159,7 +164,7 @@ Outside any boundary (free-floating controls parented to the canvas) the cycle i
 - `TreeControl` — Up/Down through DFS-flattened visible nodes; Left collapses or jumps to parent; Right expands or descends to first child; Home/End jump.
 - `Slider` — Left/Right (or Up/Down for vertical) step by 1 unit of the caller's range; Home/End jump to the endpoints.
 
-Focus rings are drawn by the skin's `drawKeyboardHighlight` (an alternating-pixel border). `Slider` overrides this to render a thin track-aligned band offset 3 px outside the slider so it never collides with the moving thumb.
+Focus rings are drawn by the skin's `drawKeyboardHighlight` (an alternating-pixel border). `Slider` paints a track-aligned 12 px-tall band that overshoots the slider's left/right edges by 3 px (matching skin overshoot). The band is drawn from `renderUnder` rather than `renderFocus`, so the draggable nib (a child rendered after `render`) sits on top of the dashed band — the focus indication remains visible at the slider's edges and behind the nib instead of cutting across it.
 
 ## 10. Fonts and text
 

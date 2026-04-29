@@ -83,13 +83,13 @@ Every public control, its direct base class, primary signals, and purpose. Const
 | `TreeControl` | `TreeNode` | — (inherits) | Scrollable tree root. |
 | `ToolBarButton` | `Button` | — | Toolbar icon button. |
 | `ToolBarStrip` | `Base` | — | Row of ToolBarButtons. |
-| `CollapsibleCategory` | `Base` | `onSelection` | Expandable category. |
+| `CollapsibleCategory` | `Base` | `onSelection` | Expandable category. Header is left-aligned with a `▼` / `▶` chevron that flips with the toggle state. |
 | `CollapsibleList` | `ScrollControl` | — | Multi-category list. |
 | `TabButton` | `Button` | — | Tab header. |
-| `TabStrip` | `Base` | — | Row of tab buttons. |
-| `TabTitleBar` | `Label` | — | Title bar for docked tabs. |
+| `TabStrip` | `Base` | — | Row of tab buttons. `setShowAsHeader(true)` paints it with the `Tab.HeaderBar` skin region; `setDockDragControl(ctrl)` makes empty strip area a `TabWindowMove` drag source. Both used by `DockedTabControl` to play the title-bar role. |
+| `TabTitleBar` | `Label` | — | Standalone title bar that drags the parent for `TabWindowMove`. Available for custom layouts; `DockedTabControl` no longer uses it (the strip itself is the title bar). |
 | `TabControl` | `Base` | `onLoseTab`, `onAddTab` | Tabbed container. |
-| `DockedTabControl` | `TabControl` | — | Tab control for dock zones. |
+| `DockedTabControl` | `TabControl` | — | Tab control for dock zones. The strip docks **Top** and renders as the title bar (gradient header); empty strip area drags the whole dock. |
 | `DockBase` | `Base` | — | Four-edge docking host. |
 | `PageControl` | `Base` | `onPageChanged` | Wizard pager. |
 | `Modal` | `Base` | — | Canvas-spanning blocker. |
@@ -176,6 +176,8 @@ dock.getLeft().getTabControl()?.addPage('Tools');
 dock.getBottom().getTabControl()?.addPage('Console');
 dock.getTabControl()?.addPage('Main');
 ```
+
+Each child dock's tab strip docks Top and renders as a gradient header bar with the tab buttons sitting inside it (VS-Code / browser style). Dragging a tab button reparents that single tab onto another dock's edge (`TabButtonMove`); dragging empty space on the strip moves the whole dock (`TabWindowMove`). When a dock loses its last tab, its parent hides it; a subsequent drop on the same edge resurrects it.
 
 ### Open a modal dialog
 
