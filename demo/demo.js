@@ -8777,12 +8777,50 @@ void main() {
     constructor(parent) {
       super(parent);
       this._allowReorder = false;
+      this._dockDragControl = null;
+      this._showAsHeader = false;
     }
     setAllowReorder(b) {
       this._allowReorder = b;
     }
     allowReorder() {
       return this._allowReorder;
+    }
+    /**
+     * Configure this strip as a drag source for whole-dock relocation.
+     * `ctrl` is reported as the `TabWindowMove` package's `drawcontrol`
+     * (typically the owning DockedTabControl) so DockBase's drop handler
+     * reparents the entire tab set in one go. Pass `null` to disable.
+     */
+    setDockDragControl(ctrl) {
+      this._dockDragControl = ctrl;
+      if (ctrl) {
+        this.setMouseInputEnabled(true);
+        this.dragAndDrop_SetPackage(true, "TabWindowMove");
+      } else {
+        this.dragAndDrop_SetPackage(false, "");
+      }
+    }
+    dragAndDrop_StartDragging(p, x, y) {
+      if (!this._dockDragControl) return false;
+      p.holdoffset = this.canvasPosToLocal({ x, y });
+      p.drawcontrol = this._dockDragControl;
+      return true;
+    }
+    /**
+     * Render with the Tab.HeaderBar background — turns the strip into a
+     * macOS / VS Code-style title bar that hosts the tab buttons.
+     */
+    setShowAsHeader(b) {
+      if (this._showAsHeader === b) return;
+      this._showAsHeader = b;
+      this.redraw();
+    }
+    showsAsHeader() {
+      return this._showAsHeader;
+    }
+    render(skin2) {
+      if (this._showAsHeader) skin2.drawTabTitleBar(this);
     }
     layout(skin2) {
       super.layout(skin2);
@@ -9259,21 +9297,22 @@ void main() {
       super(parent);
       this.dock(Pos.Fill);
       this.setAllowReorder(true);
-      this._titleBar = new TabTitleBar(this);
-      this._titleBar.dock(Pos.Top);
-      this._titleBar.hide();
+      const strip = this.getTabStrip();
+      strip.setHeight(24);
+      strip.setShowAsHeader(true);
+      strip.setDockDragControl(this);
     }
     // =====================================================================
-    // Title-bar controls
+    // Legacy title-bar shims
+    //
+    // The dedicated TabTitleBar is gone — its role is played by the strip.
+    // These methods are kept as no-ops so older callers (and any code
+    // still wiring `setShowTitlebar(true)` from before the refactor)
+    // don't error out. New code should configure the strip directly.
     // =====================================================================
-    setShowTitlebar(show) {
-      this._titleBar.setHidden(!show);
+    setShowTitlebar(_show) {
     }
     updateTitleBar() {
-      const current = this.getCurrentButton();
-      if (!current) return;
-      this._titleBar.setText(current.getText());
-      this._titleBar.sizeToContents();
     }
     // =====================================================================
     // Move tabs between docked panels
@@ -9342,19 +9381,6 @@ void main() {
     // callers should still prefer `handleTabPress`.
     onTabPressedExt(btn) {
       this.handleTabPress(btn);
-    }
-    // =====================================================================
-    // Layout hook
-    //
-    // Hide the tab strip when there's only one tab — the title bar
-    // (when visible) takes over that visual role. Keep the strip visible
-    // when there are two or more tabs so the user can pick.
-    // =====================================================================
-    layout(skin2) {
-      const strip = this.getTabStrip();
-      strip.setHidden(this.tabCount() <= 1);
-      super.layout(skin2);
-      this.updateTitleBar();
     }
   };
 
@@ -11346,8 +11372,6 @@ void main() {
     setupChildDock(pos) {
       if (!this._dockedTabControl) {
         const tc = new DockedTabControl(this);
-        tc.setTabStripPosition(Pos.Bottom);
-        tc.setShowTitlebar(true);
         tc.onLoseTab.on(() => this.onTabRemoved());
         this._dockedTabControl = tc;
       }

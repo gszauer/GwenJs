@@ -137,8 +137,11 @@ export class DockBase extends Base {
   protected setupChildDock(pos: number): void {
     if (!this._dockedTabControl) {
       const tc = new DockedTabControl(this);
-      tc.setTabStripPosition(Pos.Bottom);
-      tc.setShowTitlebar(true);
+      // Strip stays at its TabControl default (Top) — DockedTabControl
+      // promotes it to a title-bar-with-embedded-tabs role, so leaving
+      // it on top is the modernized layout. (The original GWEN port
+      // moved the strip to Bottom and floated a separate TabTitleBar
+      // on Top; the current design merges those into one strip.)
       tc.onLoseTab.on(() => this.onTabRemoved());
       this._dockedTabControl = tc;
     }

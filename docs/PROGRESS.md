@@ -4,6 +4,17 @@ Append-only. Orchestrator writes a one-paragraph entry after each phase complete
 
 ---
 
+## 2026-04-28 (later) — DockedTabControl: tabs-in-header layout
+
+`DockedTabControl` previously stacked a separate `TabTitleBar` on Top + a `TabStrip` on Bottom; the strip even hid itself when only one tab existed. The user wanted the modern VS-Code / browser look — tabs sitting in the title bar at the top. Refactor:
+
+- **`TabStrip`** gained two opt-in modes: `setShowAsHeader(true)` paints the strip with the existing `Tab.HeaderBar` 9-slice region, and `setDockDragControl(ctrl)` registers it as a `TabWindowMove` drag source whose `drawcontrol` is the supplied DockedTabControl. Empty (non-button) area on the strip is now the whole-dock drag handle, exactly like the title bar of a window.
+- **`DockedTabControl`** now configures its inherited strip in both of those modes during construction and drops the dedicated `TabTitleBar` child entirely. The legacy `setShowTitlebar` / `updateTitleBar` methods stick around as no-op shims so older callers (and any code wired against the old field) don't break.
+- **`DockBase.setupChildDock`** no longer flips the strip to `Pos.Bottom`; it stays at the `TabControl` default (`Top`).
+- **`DockedTabControl.layout`** override removed — the strip used to hide itself on `tabCount <= 1`, but now the strip *is* the title bar so it must remain visible even with a single tab.
+
+Tests updated: `docked-tab-control.spec.ts` #1 verifies the strip is configured as header + drag source, #2 verifies the strip's drag start emits `TabWindowMove` with `drawcontrol = dtc`, #4 inverts the old assertion (single-tab strip stays visible), #5 covers the legacy shim survives unchanged usage. Full suite: 1644/1644 green. Visual confirms the bottom dock now reads as `[Output][Logs]` flush against a header gradient with an empty drag area to the right.
+
 ## 2026-04-28 (later) — Docking bug sweep (re-dock + re-attach correctness)
 
 User reported "the newly docked control looks like it has no contents until I dock it elsewhere." Tracing through the re-host flow surfaced **three** related bugs in `TabControl` / `DockedTabControl` / `DockBase`, each of which independently turned a re-docked panel into a visible regression:

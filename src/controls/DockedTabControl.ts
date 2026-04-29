@@ -1,66 +1,74 @@
 // DockedTabControl — a TabControl variant that fills its parent and
-// surfaces a TabTitleBar along the top when only a single tab is
-// showing. Ports `Gwen::Controls::DockedTabControl` from
+// uses its tab strip *as* the window title bar. Ports
+// `Gwen::Controls::DockedTabControl` from
 // include/Gwen/Controls/DockedTabControl.h +
-// src/Controls/DockedTabControl.cpp.
+// src/Controls/DockedTabControl.cpp, with a UX modernization:
+//
+// Layout (vs. the original GWEN port):
+//   * The tab strip is docked **Top** and renders the Tab.HeaderBar
+//     skin region as its background — visually it *is* the title bar.
+//   * Tab buttons sit inside the strip flush against the top edge,
+//     macOS / VS Code style. Dragging empty (non-button) area on the
+//     strip moves the whole dock (`TabWindowMove`).
+//   * The dedicated `TabTitleBar` child is gone; the strip absorbs its
+//     visual + drag-handle role.
 //
 // Behaviour:
 //   * Docks `Pos.Fill` inside its parent (a window / layout slot).
-//   * Enables tab-strip reordering out of the box.
-//   * Hides the TabStrip when only zero or one tab exists and lets the
-//     title bar stand in as the visual anchor.
+//   * Tab-strip reordering is enabled by default.
 //   * `moveTabsTo(target)` transplants every TabButton (and the page it
-//     owns) to another DockedTabControl. Matches GWEN's equivalent,
-//     which is used to merge or split docked panels.
+//     owns) to another DockedTabControl, preserving the source's
+//     current selection so the visible tab survives a whole-dock drag.
 //
 // Deviations from GWEN:
-//   * GWEN's title-bar drag-tears the entire TabControl into a floating
-//     WindowControl; our `TabTitleBar` registers package "TabWindowMove"
-//     and `DockBase.HandleDrop` reparents the tab set onto another
-//     dock's edge instead. Tear-out into a free window would require
-//     the WindowControl/DragAndDrop tear-out workflow which is not in
-//     scope.
+//   * Upstream's title bar is a separate Top-docked Label that drag-tears
+//     the TabControl into a floating WindowControl. We instead treat the
+//     strip itself as the drag source (matching the modern web/IDE feel)
+//     and our `DockBase.HandleDrop` reparents the tab set onto another
+//     dock's edge instead of producing a free-floating window.
 //   * Our port's `Signal.on()` disposer model doesn't support
 //     "remove-by-handler-owner" the way GWEN's `RemoveHandler(ctrl)`
 //     does. `moveTabsTo` therefore leaves stale onPress subscriptions
-//     on the original TabControl attached; they no-op safely because
-//     the moved page is no longer a child of the original inner panel.
+//     on the original TabControl; `TabControl.onTabPressed` short-
+//     circuits when the pressed button is no longer parented to its
+//     strip, so stale subscriptions are harmless.
 
 import { TabControl } from './TabControl';
 import { TabButton } from './TabButton';
-import { TabTitleBar } from './TabTitleBar';
 import { Pos } from '../core/Align';
 import { eventInfo } from '../core/Events';
 import { margin } from '../core/Structures';
 import type { Base } from './Base';
-import type { Skin } from '../skin/Skin';
 
 export class DockedTabControl extends TabControl {
-  protected _titleBar: TabTitleBar;
-
   constructor(parent: Base | null) {
     super(parent);
     this.dock(Pos.Fill);
     this.setAllowReorder(true);
 
-    this._titleBar = new TabTitleBar(this);
-    this._titleBar.dock(Pos.Top);
-    this._titleBar.hide();
+    // Promote the strip to "title bar with embedded tabs" mode:
+    // header-bar background + whole-dock drag on empty area.
+    const strip = this.getTabStrip();
+    strip.setHeight(24);
+    strip.setShowAsHeader(true);
+    strip.setDockDragControl(this);
   }
 
   // =====================================================================
-  // Title-bar controls
+  // Legacy title-bar shims
+  //
+  // The dedicated TabTitleBar is gone — its role is played by the strip.
+  // These methods are kept as no-ops so older callers (and any code
+  // still wiring `setShowTitlebar(true)` from before the refactor)
+  // don't error out. New code should configure the strip directly.
   // =====================================================================
 
-  setShowTitlebar(show: boolean): void {
-    this._titleBar.setHidden(!show);
+  setShowTitlebar(_show: boolean): void {
+    /* strip is the title bar; toggling this is a no-op now. */
   }
 
   updateTitleBar(): void {
-    const current = this.getCurrentButton();
-    if (!current) return;
-    this._titleBar.setText(current.getText());
-    this._titleBar.sizeToContents();
+    /* tab buttons render their own labels; nothing to update. */
   }
 
   // =====================================================================
@@ -171,20 +179,5 @@ export class DockedTabControl extends TabControl {
   // callers should still prefer `handleTabPress`.
   onTabPressedExt(btn: TabButton): void {
     this.handleTabPress(btn);
-  }
-
-  // =====================================================================
-  // Layout hook
-  //
-  // Hide the tab strip when there's only one tab — the title bar
-  // (when visible) takes over that visual role. Keep the strip visible
-  // when there are two or more tabs so the user can pick.
-  // =====================================================================
-
-  override layout(skin: Skin): void {
-    const strip = this.getTabStrip();
-    strip.setHidden(this.tabCount() <= 1);
-    super.layout(skin);
-    this.updateTitleBar();
   }
 }

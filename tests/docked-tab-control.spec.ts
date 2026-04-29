@@ -22,10 +22,12 @@ test.describe('T212 DockedTabControl', () => {
   });
 
   // =========================================================================
-  // 1. Construction: docks Fill; title bar hidden; allowReorder true
+  // 1. Construction: docks Fill; strip configured as title-bar-with-tabs;
+  //    allowReorder true. The dedicated TabTitleBar is gone — the strip
+  //    plays its visual + drag role.
   // =========================================================================
 
-  test('1 — construction: docks Fill; titleBar hidden; allowReorder=true', async ({ page }) => {
+  test('1 — construction: docks Fill; strip is header + drag source; allowReorder=true', async ({ page }) => {
     const result = await page.evaluate(() => {
       const G = (window as any).Gwen;
       const canvas = (window as any).gwenCanvas;
@@ -35,43 +37,58 @@ test.describe('T212 DockedTabControl', () => {
         // dock() stores the Pos enum value on the control.
         const dockIsFill = (dtc as any)._dock === G.Pos.Fill;
 
-        // Title bar should be hidden by default (constructor calls _titleBar.hide()).
-        const titleBar = (dtc as any)._titleBar;
-        const titleHidden = titleBar !== null && titleBar.hidden();
+        const strip = dtc.getTabStrip();
+        const stripShowsAsHeader = strip.showsAsHeader();
+        // setDockDragControl wires the strip up as the drag source.
+        const stripDragControl = (strip as any)._dockDragControl === dtc;
 
         // allowReorder delegates to the strip.
         const reorder = dtc.allowReorder();
 
         dtc.dispose();
-        return { threw: false, dockIsFill, titleHidden, reorder };
+        return { threw: false, dockIsFill, stripShowsAsHeader, stripDragControl, reorder };
       } catch {
-        return { threw: true, dockIsFill: false, titleHidden: false, reorder: false };
+        return { threw: true, dockIsFill: false, stripShowsAsHeader: false, stripDragControl: false, reorder: false };
       }
     });
     expect(result.threw).toBe(false);
     expect(result.dockIsFill).toBe(true);
-    expect(result.titleHidden).toBe(true);
+    expect(result.stripShowsAsHeader).toBe(true);
+    expect(result.stripDragControl).toBe(true);
     expect(result.reorder).toBe(true);
   });
 
   // =========================================================================
-  // 2. setShowTitlebar(true) — title bar becomes visible
+  // 2. Strip drag: starting a drag on the strip emits a TabWindowMove
+  //    package whose `drawcontrol` points at the owning DockedTabControl,
+  //    so DockBase's drop handler reparents the entire tab set.
   // =========================================================================
 
-  test('2 — setShowTitlebar(true): titleBar is no longer hidden', async ({ page }) => {
+  test('2 — strip drag emits TabWindowMove with the DockedTabControl as drawcontrol', async ({ page }) => {
     const result = await page.evaluate(() => {
       const G = (window as any).Gwen;
       const canvas = (window as any).gwenCanvas;
       const dtc = new G.DockedTabControl(canvas);
+      dtc.setBounds(0, 0, 300, 200);
 
-      dtc.setShowTitlebar(true);
-      const titleBar = (dtc as any)._titleBar;
-      const visible = !titleBar.hidden();
+      const strip = dtc.getTabStrip();
+      const pkg = {
+        name: 'TabWindowMove', userdata: null, draggable: true,
+        drawcontrol: null, holdoffset: { x: 0, y: 0 },
+      };
+      const started = strip.dragAndDrop_StartDragging(pkg, 50, 8);
 
+      const r = {
+        started,
+        drawcontrolIsDtc: pkg.drawcontrol === dtc,
+        pkgName: pkg.name,
+      };
       dtc.dispose();
-      return visible;
+      return r;
     });
-    expect(result).toBe(true);
+    expect(result.started).toBe(true);
+    expect(result.drawcontrolIsDtc).toBe(true);
+    expect(result.pkgName).toBe('TabWindowMove');
   });
 
   // =========================================================================
@@ -105,10 +122,12 @@ test.describe('T212 DockedTabControl', () => {
   });
 
   // =========================================================================
-  // 4. Single-tab mode: after removing one page, tabCount=1; strip hidden
+  // 4. Single-tab mode: strip remains visible (it's the title bar). The
+  //    earlier behaviour — hiding the strip when only one tab existed —
+  //    no longer makes sense now that the strip *is* the title bar.
   // =========================================================================
 
-  test('4 — remove to single tab: tabCount=1; strip hidden after layout', async ({ page }) => {
+  test('4 — single tab: strip stays visible (it is the title bar)', async ({ page }) => {
     const result = await page.evaluate(() => {
       const G = (window as any).Gwen;
       const canvas = (window as any).gwenCanvas;
@@ -133,35 +152,34 @@ test.describe('T212 DockedTabControl', () => {
       return { count, stripHidden };
     });
     expect(result.count).toBe(1);
-    expect(result.stripHidden).toBe(true);
+    expect(result.stripHidden).toBe(false);
   });
 
   // =========================================================================
-  // 5. updateTitleBar() sets title bar text from current tab button
+  // 5. Legacy `setShowTitlebar` / `updateTitleBar` shims are no-ops that
+  //    don't throw. The strip itself plays the title-bar role, so these
+  //    survive only for back-compat with code written against the old
+  //    API.
   // =========================================================================
 
-  test('5 — updateTitleBar(): titleBar text matches current tab label', async ({ page }) => {
-    const result = await page.evaluate(() => {
+  test('5 — setShowTitlebar / updateTitleBar are safe no-ops', async ({ page }) => {
+    const threw = await page.evaluate(() => {
       const G = (window as any).Gwen;
       const canvas = (window as any).gwenCanvas;
-
-      const dtc = new G.DockedTabControl(canvas);
-      dtc.setBounds(0, 0, 400, 300);
-      dtc.setShowTitlebar(true);
-
-      dtc.addPage('Hello');
-      dtc.addPage('World');
-
-      // Current button is 'Hello' (first page auto-selected).
-      dtc.updateTitleBar();
-
-      const titleBar = (dtc as any)._titleBar;
-      const text = titleBar.getText();
-
-      dtc.dispose();
-      return text;
+      try {
+        const dtc = new G.DockedTabControl(canvas);
+        dtc.setBounds(0, 0, 400, 300);
+        dtc.setShowTitlebar(true);
+        dtc.setShowTitlebar(false);
+        dtc.addPage('Hello');
+        dtc.updateTitleBar();
+        dtc.dispose();
+        return false;
+      } catch {
+        return true;
+      }
     });
-    expect(result).toBe('Hello');
+    expect(threw).toBe(false);
   });
 
   // =========================================================================
