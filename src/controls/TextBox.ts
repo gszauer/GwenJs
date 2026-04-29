@@ -52,7 +52,6 @@ export class TextBox extends Label {
   protected _editable = true;
   protected _selectAll = false;
 
-  protected _caretColor: Color = color(30, 30, 30, 255);
   protected _nextCaretBlink = 0;
   protected _caretVisible = true;
 
@@ -554,7 +553,7 @@ export class TextBox extends Label {
         1,
         this.height() - pad.top - pad.bottom,
       );
-      skin.renderer.setDrawColor(this._caretColor);
+      skin.renderer.setDrawColor(skin.colors.label.default);
       skin.renderer.drawFilledRect(caretRect);
     }
   }

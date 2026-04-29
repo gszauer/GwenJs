@@ -155,6 +155,20 @@ function parseHex(s: string): Color {
   return color((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff, 255);
 }
 
+function paletteIsDark(): boolean {
+  const c = parseHex(activePalette.canvasBg);
+  return c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 < 96;
+}
+
+function darkAware(lightValue: string, darkValue: string): string {
+  return paletteIsDark() ? darkValue : lightValue;
+}
+
+function paletteRgba(hex: string, alpha: number): string {
+  const c = parseHex(hex);
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+}
+
 interface PatchStyle {
   fill?: string | CanvasGradient;
   stroke?: string;
@@ -317,15 +331,15 @@ function drawWindowControl(
     top = activePalette.titleActiveTop;
     bot = activePalette.titleActiveBottom;
   } else if (state === 'hover') {
-    top = '#a4d4f0';
-    bot = '#5cb0e0';
+    top = darkAware('#a4d4f0', activePalette.buttonHoverTop);
+    bot = darkAware('#5cb0e0', activePalette.buttonHoverBot);
   } else {
-    top = '#3878ac';
-    bot = '#205c90';
+    top = darkAware('#3878ac', activePalette.buttonPressedTop);
+    bot = darkAware('#205c90', activePalette.buttonPressedBot);
   }
   drawPatch(ctx, x + 4, y + 4, 23, 23, {
     fill: vGradient(ctx, x + 4, y + 4, 23, top, bot),
-    stroke: '#205c90',
+    stroke: darkAware('#205c90', state === 'normal' ? activePalette.panelBorder : activePalette.accent),
     borderRadius: 2,
   });
 
@@ -443,7 +457,7 @@ function drawSliderThumb(
   } else {
     top = activePalette.buttonDisabled;
     bot = activePalette.buttonDisabled;
-    border = '#b0b0b0';
+    border = darkAware('#b0b0b0', activePalette.panelBorder);
   }
   drawPatch(ctx, x + 1, y + 1, 13, 13, {
     fill: vGradient(ctx, x + 1, y + 1, 13, top, bot),
@@ -500,7 +514,7 @@ function drawScrollerArrowButton(
   } else {
     top = activePalette.buttonDisabled;
     bot = activePalette.buttonDisabled;
-    border = '#b0b0b0';
+    border = darkAware('#b0b0b0', activePalette.panelBorder);
   }
   drawPatch(ctx, x, y, 15, 15, {
     fill: vGradient(ctx, x, y, 15, top, bot),
@@ -522,7 +536,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       fill: vGradient(ctx, x, y, h, activePalette.buttonNormalTop, activePalette.buttonNormalBot),
       stroke: activePalette.buttonBorder,
       borderRadius: 3,
-      bevelLight: 'rgba(255,255,255,0.5)',
+      bevelLight: darkAware('rgba(255,255,255,0.5)', 'rgba(255,255,255,0.08)'),
     });
   };
   const buttonHover = (): void => {
@@ -530,7 +544,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       fill: vGradient(ctx, x, y, h, activePalette.buttonHoverTop, activePalette.buttonHoverBot),
       stroke: activePalette.accent,
       borderRadius: 3,
-      bevelLight: 'rgba(255,255,255,0.6)',
+      bevelLight: darkAware('rgba(255,255,255,0.6)', 'rgba(255,255,255,0.12)'),
     });
   };
   const buttonDown = (): void => {
@@ -538,13 +552,13 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       fill: vGradient(ctx, x, y, h, activePalette.buttonPressedTop, activePalette.buttonPressedBot),
       stroke: activePalette.buttonBorder,
       borderRadius: 3,
-      bevelDark: 'rgba(0,0,0,0.15)',
+      bevelDark: darkAware('rgba(0,0,0,0.15)', 'rgba(0,0,0,0.35)'),
     });
   };
   const buttonDisabled = (): void => {
     drawPatch(ctx, x, y, w, h, {
       fill: activePalette.buttonDisabled,
-      stroke: '#b0b0b0',
+      stroke: darkAware('#b0b0b0', activePalette.panelBorder),
       borderRadius: 3,
     });
   };
@@ -571,7 +585,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.statusBarBg,
         stroke: activePalette.panelBorder,
-        bevelLight: 'rgba(255,255,255,0.5)',
+        bevelLight: darkAware('rgba(255,255,255,0.5)', 'rgba(255,255,255,0.06)'),
       });
       return;
     }
@@ -624,7 +638,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // Body.
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.panelFill,
-        stroke: inactive ? '#909090' : '#205c90',
+        stroke: inactive ? darkAware('#909090', activePalette.panelBorder) : darkAware('#205c90', activePalette.buttonBorder),
         borderRadius: 6,
       });
       // Title bar — height matches Window.Normal's mt so the painted
@@ -675,14 +689,14 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Checkbox.Disabled.Normal': {
       drawPatch(ctx, x, y, 15, 15, {
         fill: activePalette.buttonDisabled,
-        stroke: '#b0b0b0',
+        stroke: darkAware('#b0b0b0', activePalette.panelBorder),
       });
       return;
     }
     case 'Checkbox.Disabled.Checked': {
       drawPatch(ctx, x, y, 15, 15, {
         fill: activePalette.buttonDisabled,
-        stroke: '#b0b0b0',
+        stroke: darkAware('#b0b0b0', activePalette.panelBorder),
       });
       drawCheckmark(ctx, x, y, activePalette.textDisabled);
       return;
@@ -699,11 +713,11 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       return;
     }
     case 'RadioButton.Disabled.Normal': {
-      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, '#b0b0b0');
+      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, darkAware('#b0b0b0', activePalette.panelBorder));
       return;
     }
     case 'RadioButton.Disabled.Checked': {
-      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, '#b0b0b0');
+      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, darkAware('#b0b0b0', activePalette.panelBorder));
       drawRadioDot(ctx, x, y, activePalette.textDisabled);
       return;
     }
@@ -722,14 +736,14 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
         stroke: activePalette.textboxFocused,
       });
       // Inner highlight to indicate focus.
-      ctx.fillStyle = 'rgba(72,144,196,0.12)';
+      ctx.fillStyle = darkAware('rgba(72,144,196,0.12)', paletteRgba(activePalette.accent, 0.16));
       ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
       return;
     }
     case 'TextBox.Disabled': {
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.buttonDisabled,
-        stroke: '#b0b0b0',
+        stroke: darkAware('#b0b0b0', activePalette.panelBorder),
       });
       return;
     }
@@ -738,8 +752,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Menu.Strip': {
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.menuStripBg,
-        bevelLight: '#ffffff',
-        bevelDark: '#a0a0a0',
+        bevelLight: darkAware('#ffffff', 'rgba(255,255,255,0.08)'),
+        bevelDark: darkAware('#a0a0a0', 'rgba(0,0,0,0.35)'),
       });
       return;
     }
@@ -751,7 +765,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       });
       if (name === 'Menu.BackgroundWithMargin') {
         // 24px left gutter for icons / accelerators.
-        ctx.fillStyle = '#dcdcdc';
+        ctx.fillStyle = darkAware('#dcdcdc', activePalette.panelDark);
         ctx.fillRect(x + 1, y + 1, 22, h - 2);
         ctx.fillStyle = activePalette.panelBorder;
         ctx.fillRect(x + 23, y + 1, 1, h - 2);
@@ -787,7 +801,14 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       drawPatch(ctx, x, y, w, h, {
         // Was hardcoded #e8e8e8 / #cfcfcf. Pulling from the palette so
         // dark mode picks up the darker tab-header gradient.
-        fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
+        fill: vGradient(
+          ctx,
+          x,
+          y,
+          h,
+          darkAware(activePalette.tabActiveTop, activePalette.panelDark),
+          darkAware(activePalette.tabActiveBot, activePalette.panelFill),
+        ),
         stroke: activePalette.panelBorder,
       });
       return;
@@ -831,7 +852,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // its bounds (visibly above the title text and shifted left).
       drawPatch(ctx, x + 3, y + 3, 9, 9, {
         fill: activePalette.textboxBg,
-        stroke: '#808080',
+        stroke: darkAware('#808080', activePalette.panelBorder),
       });
       ctx.fillStyle = activePalette.textNormal;
       ctx.fillRect(x + 5, y + 7, 5, 1);
@@ -842,7 +863,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // Same centering offset as Tree.Plus (see above).
       drawPatch(ctx, x + 3, y + 3, 9, 9, {
         fill: activePalette.textboxBg,
-        stroke: '#808080',
+        stroke: darkAware('#808080', activePalette.panelBorder),
       });
       ctx.fillStyle = activePalette.textNormal;
       ctx.fillRect(x + 5, y + 7, 5, 1);
@@ -925,7 +946,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Scroller.ButtonH_Disabled': {
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.buttonDisabled,
-        stroke: '#b0b0b0',
+        stroke: darkAware('#b0b0b0', activePalette.panelBorder),
         borderRadius: 2,
       });
       return;
@@ -978,11 +999,11 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Input.UpDown ----
     case 'Input.UpDown.Up.Normal': drawSpinnerArrow(ctx, x, y, true, activePalette.textNormal); return;
     case 'Input.UpDown.Up.Hover': drawSpinnerArrow(ctx, x, y, true, activePalette.accent); return;
-    case 'Input.UpDown.Up.Down': drawSpinnerArrow(ctx, x, y, true, '#205c90'); return;
+    case 'Input.UpDown.Up.Down': drawSpinnerArrow(ctx, x, y, true, darkAware('#205c90', activePalette.textNormal)); return;
     case 'Input.UpDown.Up.Disabled': drawSpinnerArrow(ctx, x, y, true, activePalette.textDisabled); return;
     case 'Input.UpDown.Down.Normal': drawSpinnerArrow(ctx, x, y, false, activePalette.textNormal); return;
     case 'Input.UpDown.Down.Hover': drawSpinnerArrow(ctx, x, y, false, activePalette.accent); return;
-    case 'Input.UpDown.Down.Down': drawSpinnerArrow(ctx, x, y, false, '#205c90'); return;
+    case 'Input.UpDown.Down.Down': drawSpinnerArrow(ctx, x, y, false, darkAware('#205c90', activePalette.textNormal)); return;
     case 'Input.UpDown.Down.Disabled': drawSpinnerArrow(ctx, x, y, false, activePalette.textDisabled); return;
 
     // ---- ProgressBar ----
@@ -996,8 +1017,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     }
     case 'ProgressBar.Front': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, '#33e858', activePalette.progressFront),
-        stroke: '#008818',
+        fill: vGradient(ctx, x, y, h, darkAware('#33e858', '#6f879f'), activePalette.progressFront),
+        stroke: darkAware('#008818', '#7e91a4'),
         borderRadius: 2,
       });
       return;
@@ -1036,14 +1057,14 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // between top and center patches blends white-to-white.
       ctx.fillStyle = vGradient(ctx, x + 1, y + 1, 18, activePalette.titleActiveTop, activePalette.titleActiveBottom);
       ctx.fillRect(x + 1, y + 1, w - 2, 18);
-      ctx.fillStyle = '#205c90';
+      ctx.fillStyle = darkAware('#205c90', activePalette.panelBorder);
       ctx.fillRect(x + 1, y + 19, w - 2, 1);
       return;
     }
     case 'CategoryList.Header': {
       drawPatch(ctx, x, y, w, h, {
         fill: vGradient(ctx, x, y, h, activePalette.titleActiveTop, activePalette.titleActiveBottom),
-        stroke: '#205c90',
+        stroke: darkAware('#205c90', activePalette.panelBorder),
         borderRadius: 3,
       });
       return;

@@ -41,6 +41,43 @@ function applyCanvasBgFromTheme(): void {
   const n = parseInt(h, 16);
   canvas.setBackgroundColor(Gwen.color((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff, 255));
 }
+
+const themedIconButtons: Gwen.Button[] = [];
+
+function isDarkTheme(): boolean {
+  const hex = skin.getPalette().canvasBg;
+  if (!hex.startsWith('#')) return false;
+  let h = hex.slice(1);
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return (r * 0.2126 + g * 0.7152 + b * 0.0722) < 128;
+}
+
+function themedIconColor(): Gwen.Color {
+  return isDarkTheme() ? Gwen.color(214, 214, 214, 255) : Gwen.color(42, 42, 42, 255);
+}
+
+function applyThemedIconColor(): void {
+  const c = themedIconColor();
+  for (let i = themedIconButtons.length - 1; i >= 0; i--) {
+    const b = themedIconButtons[i];
+    if (!b.parent) {
+      themedIconButtons.splice(i, 1);
+      continue;
+    }
+    b.setImageColor(c);
+  }
+}
+
+function registerThemedIconButton<T extends Gwen.Button>(button: T): T {
+  themedIconButtons.push(button);
+  button.setImageColor(themedIconColor());
+  return button;
+}
+
 applyCanvasBgFromTheme();
 canvas.redraw();
 
@@ -168,6 +205,7 @@ const menuStrip = new Gwen.MenuStrip(canvas);
   const applyTheme = (palette: Gwen.Palette, light: boolean): void => {
     skin.setTheme(palette);
     applyCanvasBgFromTheme();
+    applyThemedIconColor();
     lightItem.setChecked(light);
     darkItem.setChecked(!light);
     canvas.redraw();
@@ -372,7 +410,6 @@ addDemo(basicCat, 'Label', (p) => {
 });
 
 addDemo(basicCat, 'LabelMultiline', (p) => {
-  const ink = Gwen.color(40, 40, 40, 255);
   const colA = [
     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum at lobortis nulla, ac feugiat dolor. Suspendisse potenti.',
     'Phasellus dignissim, lectus at varius cursus, mi mauris egestas mauris, ac consectetur ipsum risus quis eros. Curabitur lacinia eros nec orci posuere, sed varius mi venenatis. Donec a turpis quis arcu interdum tristique. Praesent vehicula odio nec arcu volutpat, in tincidunt urna porttitor. Suspendisse hendrerit augue eu lectus laoreet, in vehicula ipsum cursus.',
@@ -391,7 +428,7 @@ addDemo(basicCat, 'LabelMultiline', (p) => {
   const a = new Gwen.RichLabel(p);
   a.setBounds(x0, 10, colW, 300);
   for (const para of colA) {
-    a.addText(para, ink);
+    a.addText(para);
     a.addLineBreak();
     a.addLineBreak();
   }
@@ -399,13 +436,13 @@ addDemo(basicCat, 'LabelMultiline', (p) => {
   const b = new Gwen.RichLabel(p);
   b.setBounds(x0 + colW + gap, 10, colW, 300);
   for (const para of colB) {
-    b.addText(para, ink);
+    b.addText(para);
   }
 
   const c = new Gwen.RichLabel(p);
   c.setBounds(x0 + 2 * (colW + gap), 10, colW, 300);
   for (const para of colC) {
-    c.addText(para, ink);
+    c.addText(para);
   }
 });
 
@@ -886,13 +923,15 @@ addDemo(containersCat, 'ActionBar', (p) => {
     c.height = 20;
     const g = c.getContext('2d')!;
     g.lineWidth = 1.6;
-    g.strokeStyle = '#202020';
-    g.fillStyle = '#202020';
+    g.strokeStyle = '#ffffff';
+    g.fillStyle = '#ffffff';
     paint(g);
     const tex = Gwen.texture('actionbar-icon');
     renderer.loadTextureFromSource(tex, c);
     return tex;
   };
+  const addIconButton = (bar: Gwen.ActionBar, icon: Gwen.Texture): Gwen.ActionBarButton =>
+    registerThemedIconButton(bar.addButton('', icon));
 
   const moveIcon = makeIcon((g) => {
     // 4-arrow cross
@@ -989,7 +1028,7 @@ addDemo(containersCat, 'ActionBar', (p) => {
     g.moveTo(3, 17); g.lineTo(11, 9);
     g.moveTo(11, 9); g.lineTo(13, 7); g.lineTo(15, 9); g.lineTo(13, 11);
     g.closePath();
-    g.fillStyle = '#202020';
+    g.fillStyle = '#ffffff';
     g.fill();
     g.beginPath();
     g.moveTo(13, 11); g.lineTo(17, 7);
@@ -1015,18 +1054,18 @@ addDemo(containersCat, 'ActionBar', (p) => {
   tools.setBounds(20, 60, 32, 220);
   tools.setRadioMode(true);
 
-  const move = tools.addButton('', moveIcon);
+  const move = addIconButton(tools, moveIcon);
   move.setToolTip('Move');
   move.setToggleState(true);              // initial active tool
   move.onPress.on(() => log('Tool: Move'));
-  const brush = tools.addButton('', brushIcon);
+  const brush = addIconButton(tools, brushIcon);
   brush.setToolTip('Brush');
   brush.onPress.on(() => log('Tool: Brush'));
-  const erase = tools.addButton('', eraseIcon);
+  const erase = addIconButton(tools, eraseIcon);
   erase.setToolTip('Eraser');
   erase.onPress.on(() => log('Tool: Eraser'));
   tools.addSeparator();
-  const text = tools.addButton('', textIcon);
+  const text = addIconButton(tools, textIcon);
   text.setToolTip('Text');
   text.onPress.on(() => log('Tool: Text'));
 
@@ -1036,37 +1075,37 @@ addDemo(containersCat, 'ActionBar', (p) => {
   tools2.setColumns(2);
   tools2.setBounds(60, 60, 60, 220);
   tools2.setRadioMode(true);
-  const t2Move = tools2.addButton('', moveIcon);
+  const t2Move = addIconButton(tools2, moveIcon);
   t2Move.setToolTip('Move');
   t2Move.setToggleState(true);
   t2Move.onPress.on(() => log('Palette2: Move'));
-  const t2Lasso = tools2.addButton('', lassoIcon);
+  const t2Lasso = addIconButton(tools2, lassoIcon);
   t2Lasso.setToolTip('Lasso');
   t2Lasso.onPress.on(() => log('Palette2: Lasso'));
-  const t2Crop = tools2.addButton('', cropIcon);
+  const t2Crop = addIconButton(tools2, cropIcon);
   t2Crop.setToolTip('Crop');
   t2Crop.onPress.on(() => log('Palette2: Crop'));
-  const t2Eyedrop = tools2.addButton('', eyedropperIcon);
+  const t2Eyedrop = addIconButton(tools2, eyedropperIcon);
   t2Eyedrop.setToolTip('Eyedropper');
   t2Eyedrop.onPress.on(() => log('Palette2: Eyedropper'));
   tools2.addSeparator();
-  const t2Brush = tools2.addButton('', brushIcon);
+  const t2Brush = addIconButton(tools2, brushIcon);
   t2Brush.setToolTip('Brush');
   t2Brush.onPress.on(() => log('Palette2: Brush'));
-  const t2Fill = tools2.addButton('', fillIcon);
+  const t2Fill = addIconButton(tools2, fillIcon);
   t2Fill.setToolTip('Fill');
   t2Fill.onPress.on(() => log('Palette2: Fill'));
-  const t2Erase = tools2.addButton('', eraseIcon);
+  const t2Erase = addIconButton(tools2, eraseIcon);
   t2Erase.setToolTip('Eraser');
   t2Erase.onPress.on(() => log('Palette2: Eraser'));
-  const t2Shape = tools2.addButton('', shapeIcon);
+  const t2Shape = addIconButton(tools2, shapeIcon);
   t2Shape.setToolTip('Shape');
   t2Shape.onPress.on(() => log('Palette2: Shape'));
   tools2.addSeparator();
-  const t2Text = tools2.addButton('', textIcon);
+  const t2Text = addIconButton(tools2, textIcon);
   t2Text.setToolTip('Text');
   t2Text.onPress.on(() => log('Palette2: Text'));
-  const t2Hand = tools2.addButton('', handIcon);
+  const t2Hand = addIconButton(tools2, handIcon);
   t2Hand.setToolTip('Hand');
   t2Hand.onPress.on(() => log('Palette2: Hand'));
 
@@ -1076,17 +1115,17 @@ addDemo(containersCat, 'ActionBar', (p) => {
   const quick = new Gwen.ActionBar(p);
   quick.setBounds(130, 20, 440, 32);
 
-  const bold = quick.addButton('', boldIcon);
+  const bold = addIconButton(quick, boldIcon);
   bold.setIsToggle(true);
   bold.setToolTip('Bold');
   bold.onPress.on(() => log(`Bold: ${bold.getToggleState() ? 'on' : 'off'}`));
 
-  const italic = quick.addButton('', italicIcon);
+  const italic = addIconButton(quick, italicIcon);
   italic.setIsToggle(true);
   italic.setToolTip('Italic');
   italic.onPress.on(() => log(`Italic: ${italic.getToggleState() ? 'on' : 'off'}`));
 
-  const underline = quick.addButton('', underlineIcon);
+  const underline = addIconButton(quick, underlineIcon);
   underline.setIsToggle(true);
   underline.setToolTip('Underline');
   underline.onPress.on(() => log(`Underline: ${underline.getToggleState() ? 'on' : 'off'}`));

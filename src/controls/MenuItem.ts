@@ -264,7 +264,7 @@ export class MenuItem extends Button {
     // Upstream TextColorOverride hack — keep the accelerator's text colour
     // matched to ours when hovered / checked.
     if (this._accelerator) {
-      this._accelerator.setTextColorOverride(this.textColor());
+      this._accelerator.setTextColorOverride(this.effectiveTextColor(skin));
     }
   }
 }

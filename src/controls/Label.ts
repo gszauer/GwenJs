@@ -132,6 +132,10 @@ export class Label extends Base {
     return this._text.textColor();
   }
 
+  effectiveTextColor(skin: Skin): Color {
+    return this._text.effectiveTextColor(skin);
+  }
+
   setTextColorOverride(c: Color): void {
     this._text.setTextColorOverride(c);
   }
@@ -206,19 +210,19 @@ export class Label extends Base {
   // =====================================================================
 
   makeColorNormal(): void {
-    this.setTextColor(this.getSkin().colors.label.default);
+    this._text.setTextColorPreset('default');
   }
 
   makeColorBright(): void {
-    this.setTextColor(this.getSkin().colors.label.bright);
+    this._text.setTextColorPreset('bright');
   }
 
   makeColorDark(): void {
-    this.setTextColor(this.getSkin().colors.label.dark);
+    this._text.setTextColorPreset('dark');
   }
 
   makeColorHighlight(): void {
-    this.setTextColor(this.getSkin().colors.label.highlight);
+    this._text.setTextColorPreset('highlight');
   }
 
   // =====================================================================

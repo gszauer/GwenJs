@@ -10,6 +10,9 @@
 //   5  Pre-init      — setTheme before init() carries through
 //   6  Render        — switching themes mid-frame doesn't throw
 //   7  Pixel diff    — light vs dark produce different framebuffer content
+//   8  Text color    — wrapped implicit text tracks the active theme
+//   9  Label presets — makeColor* presets track the active theme
+//   10 RichLabel     — default rich text tracks the active theme
 
 import { test, expect } from '@playwright/test';
 import { gotoDemo, waitForFirstFrame } from './helpers';
@@ -213,5 +216,85 @@ test.describe('Skin theme switching', () => {
     // that's what flows into the atlas and into `skin.colors`.
     expect(result.sameStrip).toBe(false);
     expect(result.palAfter).toBe(true);
+  });
+
+  // =========================================================================
+  // 8. Wrapped Text should not freeze the construction-time black colour.
+  // =========================================================================
+
+  test('8 — wrapped implicit text lines inherit the dark theme text colour', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const skin = (window as any).gwenSkin;
+
+      const label = new G.Label(canvas);
+      label.setBounds(10, 10, 90, 80);
+      label.setWrap(true);
+      label.setText('Wrapped label text that must split into child lines');
+
+      skin.setTheme(G.DARK_PALETTE);
+      canvas.doThink();
+
+      const text = (label as any)._text;
+      const firstLine = text._lines[0];
+      const effective = firstLine.effectiveTextColor(skin);
+
+      label.dispose();
+      skin.setTheme(G.LIGHT_PALETTE);
+      return { r: effective.r, g: effective.g, b: effective.b };
+    });
+    expect(result).toEqual({ r: 220, g: 220, b: 220 });
+  });
+
+  test('9 — label color presets update after a dark theme switch', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const skin = (window as any).gwenSkin;
+
+      skin.setTheme(G.LIGHT_PALETTE);
+      const normal = new G.Label(canvas);
+      normal.makeColorNormal();
+      const dark = new G.Label(canvas);
+      dark.makeColorDark();
+
+      skin.setTheme(G.DARK_PALETTE);
+      const normalColor = normal.effectiveTextColor(skin);
+      const darkColor = dark.effectiveTextColor(skin);
+
+      normal.dispose();
+      dark.dispose();
+      skin.setTheme(G.LIGHT_PALETTE);
+      return {
+        normal: { r: normalColor.r, g: normalColor.g, b: normalColor.b },
+        dark: { r: darkColor.r, g: darkColor.g, b: darkColor.b },
+      };
+    });
+    expect(result.normal).toEqual({ r: 220, g: 220, b: 220 });
+    expect(result.dark).toEqual({ r: 220, g: 220, b: 220 });
+  });
+
+  test('10 — RichLabel default text inherits the dark theme text colour', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const skin = (window as any).gwenSkin;
+
+      skin.setTheme(G.LIGHT_PALETTE);
+      const rich = new G.RichLabel(canvas);
+      rich.setBounds(10, 10, 220, 80);
+      rich.addText('Rich label text should follow the current theme');
+      canvas.doThink();
+
+      const firstText = Array.from(rich.children).find((c: any) => c instanceof G.Text) as any;
+      skin.setTheme(G.DARK_PALETTE);
+      const effective = firstText.effectiveTextColor(skin);
+
+      rich.dispose();
+      skin.setTheme(G.LIGHT_PALETTE);
+      return { r: effective.r, g: effective.g, b: effective.b };
+    });
+    expect(result).toEqual({ r: 220, g: 220, b: 220 });
   });
 });

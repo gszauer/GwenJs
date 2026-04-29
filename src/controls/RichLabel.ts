@@ -21,7 +21,7 @@ import type { Font } from '../skin/FontAtlas';
 interface TextBlock {
   kind: 'text';
   text: string;
-  color: Color;
+  color: Color | null;
   font: Font | null;
 }
 
@@ -35,6 +35,7 @@ export class RichLabel extends Base {
   protected _blocks: Block[] = [];
   protected _rebuildRequired = true;
   protected _defaultColor: Color = color(255, 255, 255, 255);
+  protected _defaultColorIsExplicit = false;
 
   constructor(parent: Base | null) {
     super(parent);
@@ -56,11 +57,11 @@ export class RichLabel extends Base {
     for (let i = 0; i < parts.length; i++) {
       if (i > 0) this._blocks.push({ kind: 'newline' });
       if (parts[i].length > 0) {
-        const src = col ?? this._defaultColor;
+        const src = col ?? (this._defaultColorIsExplicit ? this._defaultColor : null);
         this._blocks.push({
           kind: 'text',
           text: parts[i],
-          color: { r: src.r, g: src.g, b: src.b, a: src.a },
+          color: src ? { r: src.r, g: src.g, b: src.b, a: src.a } : null,
           font: font ?? null,
         });
       }
@@ -83,6 +84,7 @@ export class RichLabel extends Base {
 
   setDefaultTextColor(c: Color): void {
     this._defaultColor = { r: c.r, g: c.g, b: c.b, a: c.a };
+    this._defaultColorIsExplicit = true;
   }
 
   // =====================================================================
@@ -160,7 +162,7 @@ export class RichLabel extends Base {
 
         const t = new Text(this);
         if (font) t.setFont(font);
-        t.setTextColor(b.color);
+        if (b.color) t.setTextColor(b.color);
         t.setText(tok);
         t.refreshSize();
         t.setPos(x, y);

@@ -141,7 +141,7 @@ export class TextBoxMultiline extends TextBox {
       const here = locate(cursorPos);
       const caretX = pad.left + skin.renderer.measureText(font, here.prefix).x;
       const caretY = pad.top + here.line * lineH;
-      skin.renderer.setDrawColor(this._caretColor);
+      skin.renderer.setDrawColor(skin.colors.label.default);
       skin.renderer.drawFilledRect(rect(caretX, caretY, 1, lineH));
     }
   }

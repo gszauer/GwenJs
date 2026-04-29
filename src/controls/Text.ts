@@ -16,6 +16,8 @@ import { color, point, rect, type Color, type Rect } from '../core/Structures';
 import type { Skin } from '../skin/Skin';
 import type { Font } from '../skin/FontAtlas';
 
+export type TextColorPreset = 'default' | 'bright' | 'dark' | 'highlight';
+
 export class Text extends Base {
   private _text = '';
   private _textChanged = false;
@@ -33,6 +35,7 @@ export class Text extends Base {
   // instance without reaching back through every control's
   // construction path.
   private _colorIsExplicit = false;
+  private _colorPreset: TextColorPreset | null = null;
   private _colorOverride: Color = color(255, 255, 255, 0);
 
   private _wrap = false;
@@ -90,11 +93,22 @@ export class Text extends Base {
   setTextColor(c: Color): void {
     this._color = { r: c.r, g: c.g, b: c.b, a: c.a };
     this._colorIsExplicit = true;
+    this._colorPreset = null;
     this.redraw();
   }
 
   textColor(): Color {
+    if (this._colorPreset) {
+      const skin = this.getSkinOrNull();
+      if (skin) return this.colorForPreset(skin, this._colorPreset);
+    }
     return this._color;
+  }
+
+  setTextColorPreset(preset: TextColorPreset): void {
+    this._colorPreset = preset;
+    this._colorIsExplicit = false;
+    this.redraw();
   }
 
   setTextColorOverride(c: Color): void {
@@ -104,6 +118,18 @@ export class Text extends Base {
 
   textColorOverride(): Color {
     return this._colorOverride;
+  }
+
+  effectiveTextColor(skin: Skin): Color {
+    const baseColor = this._colorPreset
+      ? this.colorForPreset(skin, this._colorPreset)
+      : this._colorIsExplicit
+        ? this._color
+        : skin.colors.label.default;
+    if (!this._colorIsExplicit && this._colorOverride.a === 0 && baseColor.r > 128 && this.isDisabledInTree()) {
+      return skin.colors.button.disabled;
+    }
+    return this._colorOverride.a === 0 ? baseColor : this._colorOverride;
   }
 
   // =====================================================================
@@ -251,7 +277,9 @@ export class Text extends Base {
       const t = new Text(this);
       t.setText(line.replace(/\s+$/, ''));
       t.setFont(font);
-      t.setTextColor(this._color);
+      if (this._colorPreset) t.setTextColorPreset(this._colorPreset);
+      else if (this._colorIsExplicit) t.setTextColor(this._color);
+      if (this._colorOverride.a !== 0) t.setTextColorOverride(this._colorOverride);
       t.setPos(pad.left, y);
       t.refreshSize();
       this._lines.push(t);
@@ -282,9 +310,7 @@ export class Text extends Base {
     // when nothing has been set explicitly. This is what makes dark mode
     // text auto-flip to light: every Text without an explicit color
     // inherits the theme's body-text colour at render time.
-    const baseColor = this._colorIsExplicit ? this._color : skin.colors.label.default;
-    const c = this._colorOverride.a === 0 ? baseColor : this._colorOverride;
-    skin.renderer.setDrawColor(c);
+    skin.renderer.setDrawColor(this.effectiveTextColor(skin));
     const pad = this.getPadding();
     skin.renderer.renderText(font, point(pad.left, pad.top), this._text);
   }
@@ -332,6 +358,25 @@ export class Text extends Base {
     const skin = this.getSkinOrNull();
     if (!skin) return;
     this._font = skin.getDefaultFont();
+  }
+
+  private isDisabledInTree(): boolean {
+    let node: Base | null = this;
+    while (node) {
+      if (node.isDisabled()) return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
+  private colorForPreset(skin: Skin, preset: TextColorPreset): Color {
+    switch (preset) {
+      case 'bright': return skin.colors.label.bright;
+      case 'dark': return skin.colors.label.dark;
+      case 'highlight': return skin.colors.label.highlight;
+      case 'default':
+      default: return skin.colors.label.default;
+    }
   }
 
   /**

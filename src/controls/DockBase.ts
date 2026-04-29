@@ -461,16 +461,18 @@ export class DockBase extends Base {
     const renderer = skin.renderer;
     const rb = this.getRenderBounds();
 
-    // Faint full-rect wash behind the directional rect.
-    renderer.setDrawColor(color(255, 100, 255, 20));
+    // Faint full-rect wash behind the directional rect. Use the same
+    // Photoshop-style blue as the dark palette instead of the old magenta
+    // debug colour so docking previews read as intentional UI chrome.
+    renderer.setDrawColor(color(38, 128, 235, 24));
     renderer.drawFilledRect(rb);
 
     if (this._hoverRect.w === 0) return;
 
     // Brighter directional preview + outline.
-    renderer.setDrawColor(color(255, 100, 255, 100));
+    renderer.setDrawColor(color(38, 128, 235, 110));
     renderer.drawFilledRect(this._hoverRect);
-    renderer.setDrawColor(color(255, 100, 255, 200));
+    renderer.setDrawColor(color(112, 178, 255, 220));
     renderer.drawLinedRect(this._hoverRect);
   }
 }

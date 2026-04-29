@@ -1512,79 +1512,79 @@ void main() {
     catLineAltButtonSelected: "#ffffff"
   });
   var DARK_PALETTE = Object.freeze({
-    canvasBg: "#1e1e1e",
-    panelFill: "#2d2d30",
-    panelBright: "#3a3a3d",
-    panelDark: "#252526",
-    panelHighlight: "#3e3e42",
-    panelBorder: "#3f3f46",
-    titleActiveTop: "#37373d",
-    titleActiveBottom: "#2d2d30",
-    titleInactiveTop: "#2a2a2c",
-    titleInactiveBot: "#252526",
-    buttonNormalTop: "#3a3a3d",
-    buttonNormalBot: "#2d2d30",
-    buttonHoverTop: "#4a4a52",
-    buttonHoverBot: "#3a3a3d",
-    buttonPressedTop: "#252526",
-    buttonPressedBot: "#2d2d30",
-    buttonDisabled: "#2d2d30",
-    buttonBorder: "#3f3f46",
-    textboxBg: "#1e1e1e",
-    textboxBorder: "#3f3f46",
-    textboxFocused: "#0098ff",
-    selection: "#264f78",
-    scrollTrack: "#1e1e1e",
-    scrollTrackBorder: "#3f3f46",
-    scrollThumbTop: "#4a4a52",
-    scrollThumbBot: "#3a3a3d",
-    scrollThumbBorder: "#5a5a62",
-    tooltipBg: "#3c3c3c",
-    tooltipBorder: "#5a5a62",
-    statusBarBg: "#252526",
-    menuStripBg: "#252526",
-    menuHoverBg: "#094771",
-    progressBack: "#252526",
-    progressFront: "#0e7c1f",
-    shadow: "rgba(0,0,0,0.65)",
+    canvasBg: "#1f1f1f",
+    panelFill: "#2b2b2b",
+    panelBright: "#343434",
+    panelDark: "#242424",
+    panelHighlight: "#3d3d3d",
+    panelBorder: "#505050",
+    titleActiveTop: "#383838",
+    titleActiveBottom: "#303030",
+    titleInactiveTop: "#2d2d2d",
+    titleInactiveBot: "#272727",
+    buttonNormalTop: "#3b3b3b",
+    buttonNormalBot: "#333333",
+    buttonHoverTop: "#474747",
+    buttonHoverBot: "#3f3f3f",
+    buttonPressedTop: "#262626",
+    buttonPressedBot: "#303030",
+    buttonDisabled: "#2f2f2f",
+    buttonBorder: "#5a5a5a",
+    textboxBg: "#252525",
+    textboxBorder: "#565656",
+    textboxFocused: "#2680eb",
+    selection: "#2d6fb3",
+    scrollTrack: "#242424",
+    scrollTrackBorder: "#3f3f3f",
+    scrollThumbTop: "#5b5b5b",
+    scrollThumbBot: "#474747",
+    scrollThumbBorder: "#686868",
+    tooltipBg: "#353535",
+    tooltipBorder: "#626262",
+    statusBarBg: "#2a2a2a",
+    menuStripBg: "#2a2a2a",
+    menuHoverBg: "#2d6fb3",
+    progressBack: "#242424",
+    progressFront: "#55708a",
+    shadow: "rgba(0,0,0,0.70)",
     textNormal: "#dcdcdc",
-    textDisabled: "#6a6a6a",
-    textOnDark: "#ffffff",
-    accent: "#0098ff",
-    tabActiveTop: "#3a3a3d",
-    tabActiveBot: "#2d2d30",
-    tabInactiveTop: "#252526",
-    tabInactiveBot: "#1e1e1e",
-    treeLines: "#5a5a62",
+    textDisabled: "#858585",
+    textOnDark: "#f4f4f4",
+    accent: "#2680eb",
+    tabActiveTop: "#4a4a4a",
+    tabActiveBot: "#3d3d3d",
+    tabInactiveTop: "#343434",
+    tabInactiveBot: "#2b2b2b",
+    treeLines: "#6a6a6a",
     treeNormal: "#dcdcdc",
-    treeHover: "#ffffff",
+    treeHover: "#f4f4f4",
     treeSelected: "#ffffff",
-    propLineNormal: "#252526",
-    propLineSelected: "#264f78",
-    propLineHover: "#37373d",
+    propLineNormal: "#333333",
+    propLineSelected: "#2d6fb3",
+    propLineHover: "#454545",
     propTitle: "#dcdcdc",
-    propColumnNormal: "#2d2d30",
-    propColumnSelected: "#37468a",
-    propColumnHover: "#3a3a3d",
+    propColumnNormal: "#2f2f2f",
+    propColumnSelected: "#315f9f",
+    propColumnHover: "#3a3a3a",
     propLabelNormal: "#dcdcdc",
     propLabelSelected: "#ffffff",
-    propLabelHover: "#ffffff",
-    propBorder: "#3f3f46",
-    modalBg: "rgba(0,0,0,0.55)",
+    propLabelHover: "#f4f4f4",
+    propBorder: "#555555",
+    modalBg: "rgba(0,0,0,0.58)",
     tooltipText: "#dcdcdc",
     catHeader: "#dcdcdc",
-    catHeaderClosed: "#6a6a6a",
+    catHeaderClosed: "#9a9a9a",
     catLineText: "#dcdcdc",
-    catLineTextHover: "#ffffff",
+    catLineTextHover: "#f4f4f4",
     catLineTextSelected: "#ffffff",
     catLineButton: "#dcdcdc",
-    catLineButtonHover: "#ffffff",
+    catLineButtonHover: "#f4f4f4",
     catLineButtonSelected: "#ffffff",
-    catLineAltText: "#bcbcbc",
-    catLineAltTextHover: "#ffffff",
+    catLineAltText: "#c6c6c6",
+    catLineAltTextHover: "#f4f4f4",
     catLineAltTextSelected: "#ffffff",
-    catLineAltButton: "#bcbcbc",
-    catLineAltButtonHover: "#ffffff",
+    catLineAltButton: "#c6c6c6",
+    catLineAltButtonHover: "#f4f4f4",
     catLineAltButtonSelected: "#ffffff"
   });
   var PALETTE = LIGHT_PALETTE;
@@ -1690,6 +1690,17 @@ void main() {
     const n = parseInt(h, 16);
     return color(n >> 16 & 255, n >> 8 & 255, n & 255, 255);
   }
+  function paletteIsDark() {
+    const c = parseHex(activePalette.canvasBg);
+    return c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 < 96;
+  }
+  function darkAware(lightValue, darkValue) {
+    return paletteIsDark() ? darkValue : lightValue;
+  }
+  function paletteRgba(hex, alpha) {
+    const c = parseHex(hex);
+    return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+  }
   function drawPatch(ctx, x, y, w, h, style) {
     const r = style.borderRadius ?? 0;
     const fill = style.fill;
@@ -1782,15 +1793,15 @@ void main() {
       top = activePalette.titleActiveTop;
       bot = activePalette.titleActiveBottom;
     } else if (state === "hover") {
-      top = "#a4d4f0";
-      bot = "#5cb0e0";
+      top = darkAware("#a4d4f0", activePalette.buttonHoverTop);
+      bot = darkAware("#5cb0e0", activePalette.buttonHoverBot);
     } else {
-      top = "#3878ac";
-      bot = "#205c90";
+      top = darkAware("#3878ac", activePalette.buttonPressedTop);
+      bot = darkAware("#205c90", activePalette.buttonPressedBot);
     }
     drawPatch(ctx, x + 4, y + 4, 23, 23, {
       fill: vGradient(ctx, x + 4, y + 4, 23, top, bot),
-      stroke: "#205c90",
+      stroke: darkAware("#205c90", state === "normal" ? activePalette.panelBorder : activePalette.accent),
       borderRadius: 2
     });
     ctx.strokeStyle = glyphColor;
@@ -1880,7 +1891,7 @@ void main() {
     } else {
       top = activePalette.buttonDisabled;
       bot = activePalette.buttonDisabled;
-      border = "#b0b0b0";
+      border = darkAware("#b0b0b0", activePalette.panelBorder);
     }
     drawPatch(ctx, x + 1, y + 1, 13, 13, {
       fill: vGradient(ctx, x + 1, y + 1, 13, top, bot),
@@ -1912,7 +1923,7 @@ void main() {
     } else {
       top = activePalette.buttonDisabled;
       bot = activePalette.buttonDisabled;
-      border = "#b0b0b0";
+      border = darkAware("#b0b0b0", activePalette.panelBorder);
     }
     drawPatch(ctx, x, y, 15, 15, {
       fill: vGradient(ctx, x, y, 15, top, bot),
@@ -1929,7 +1940,7 @@ void main() {
         fill: vGradient(ctx, x, y, h, activePalette.buttonNormalTop, activePalette.buttonNormalBot),
         stroke: activePalette.buttonBorder,
         borderRadius: 3,
-        bevelLight: "rgba(255,255,255,0.5)"
+        bevelLight: darkAware("rgba(255,255,255,0.5)", "rgba(255,255,255,0.08)")
       });
     };
     const buttonHover = () => {
@@ -1937,7 +1948,7 @@ void main() {
         fill: vGradient(ctx, x, y, h, activePalette.buttonHoverTop, activePalette.buttonHoverBot),
         stroke: activePalette.accent,
         borderRadius: 3,
-        bevelLight: "rgba(255,255,255,0.6)"
+        bevelLight: darkAware("rgba(255,255,255,0.6)", "rgba(255,255,255,0.12)")
       });
     };
     const buttonDown = () => {
@@ -1945,13 +1956,13 @@ void main() {
         fill: vGradient(ctx, x, y, h, activePalette.buttonPressedTop, activePalette.buttonPressedBot),
         stroke: activePalette.buttonBorder,
         borderRadius: 3,
-        bevelDark: "rgba(0,0,0,0.15)"
+        bevelDark: darkAware("rgba(0,0,0,0.15)", "rgba(0,0,0,0.35)")
       });
     };
     const buttonDisabled = () => {
       drawPatch(ctx, x, y, w, h, {
         fill: activePalette.buttonDisabled,
-        stroke: "#b0b0b0",
+        stroke: darkAware("#b0b0b0", activePalette.panelBorder),
         borderRadius: 3
       });
     };
@@ -1976,7 +1987,7 @@ void main() {
         drawPatch(ctx, x, y, w, h, {
           fill: activePalette.statusBarBg,
           stroke: activePalette.panelBorder,
-          bevelLight: "rgba(255,255,255,0.5)"
+          bevelLight: darkAware("rgba(255,255,255,0.5)", "rgba(255,255,255,0.06)")
         });
         return;
       }
@@ -2026,7 +2037,7 @@ void main() {
         const inactive = name === "Window.Inactive";
         drawPatch(ctx, x, y, w, h, {
           fill: activePalette.panelFill,
-          stroke: inactive ? "#909090" : "#205c90",
+          stroke: inactive ? darkAware("#909090", activePalette.panelBorder) : darkAware("#205c90", activePalette.buttonBorder),
           borderRadius: 6
         });
         const titleTop = inactive ? activePalette.titleInactiveTop : activePalette.titleActiveTop;
@@ -2095,14 +2106,14 @@ void main() {
       case "Checkbox.Disabled.Normal": {
         drawPatch(ctx, x, y, 15, 15, {
           fill: activePalette.buttonDisabled,
-          stroke: "#b0b0b0"
+          stroke: darkAware("#b0b0b0", activePalette.panelBorder)
         });
         return;
       }
       case "Checkbox.Disabled.Checked": {
         drawPatch(ctx, x, y, 15, 15, {
           fill: activePalette.buttonDisabled,
-          stroke: "#b0b0b0"
+          stroke: darkAware("#b0b0b0", activePalette.panelBorder)
         });
         drawCheckmark(ctx, x, y, activePalette.textDisabled);
         return;
@@ -2118,11 +2129,11 @@ void main() {
         return;
       }
       case "RadioButton.Disabled.Normal": {
-        drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, "#b0b0b0");
+        drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, darkAware("#b0b0b0", activePalette.panelBorder));
         return;
       }
       case "RadioButton.Disabled.Checked": {
-        drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, "#b0b0b0");
+        drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, darkAware("#b0b0b0", activePalette.panelBorder));
         drawRadioDot(ctx, x, y, activePalette.textDisabled);
         return;
       }
@@ -2139,14 +2150,14 @@ void main() {
           fill: activePalette.textboxBg,
           stroke: activePalette.textboxFocused
         });
-        ctx.fillStyle = "rgba(72,144,196,0.12)";
+        ctx.fillStyle = darkAware("rgba(72,144,196,0.12)", paletteRgba(activePalette.accent, 0.16));
         ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
         return;
       }
       case "TextBox.Disabled": {
         drawPatch(ctx, x, y, w, h, {
           fill: activePalette.buttonDisabled,
-          stroke: "#b0b0b0"
+          stroke: darkAware("#b0b0b0", activePalette.panelBorder)
         });
         return;
       }
@@ -2154,8 +2165,8 @@ void main() {
       case "Menu.Strip": {
         drawPatch(ctx, x, y, w, h, {
           fill: activePalette.menuStripBg,
-          bevelLight: "#ffffff",
-          bevelDark: "#a0a0a0"
+          bevelLight: darkAware("#ffffff", "rgba(255,255,255,0.08)"),
+          bevelDark: darkAware("#a0a0a0", "rgba(0,0,0,0.35)")
         });
         return;
       }
@@ -2166,7 +2177,7 @@ void main() {
           stroke: activePalette.panelBorder
         });
         if (name === "Menu.BackgroundWithMargin") {
-          ctx.fillStyle = "#dcdcdc";
+          ctx.fillStyle = darkAware("#dcdcdc", activePalette.panelDark);
           ctx.fillRect(x + 1, y + 1, 22, h - 2);
           ctx.fillStyle = activePalette.panelBorder;
           ctx.fillRect(x + 23, y + 1, 1, h - 2);
@@ -2201,7 +2212,14 @@ void main() {
         drawPatch(ctx, x, y, w, h, {
           // Was hardcoded #e8e8e8 / #cfcfcf. Pulling from the palette so
           // dark mode picks up the darker tab-header gradient.
-          fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
+          fill: vGradient(
+            ctx,
+            x,
+            y,
+            h,
+            darkAware(activePalette.tabActiveTop, activePalette.panelDark),
+            darkAware(activePalette.tabActiveBot, activePalette.panelFill)
+          ),
           stroke: activePalette.panelBorder
         });
         return;
@@ -2239,7 +2257,7 @@ void main() {
       case "Tree.Plus": {
         drawPatch(ctx, x + 3, y + 3, 9, 9, {
           fill: activePalette.textboxBg,
-          stroke: "#808080"
+          stroke: darkAware("#808080", activePalette.panelBorder)
         });
         ctx.fillStyle = activePalette.textNormal;
         ctx.fillRect(x + 5, y + 7, 5, 1);
@@ -2249,7 +2267,7 @@ void main() {
       case "Tree.Minus": {
         drawPatch(ctx, x + 3, y + 3, 9, 9, {
           fill: activePalette.textboxBg,
-          stroke: "#808080"
+          stroke: darkAware("#808080", activePalette.panelBorder)
         });
         ctx.fillStyle = activePalette.textNormal;
         ctx.fillRect(x + 5, y + 7, 5, 1);
@@ -2355,7 +2373,7 @@ void main() {
       case "Scroller.ButtonH_Disabled": {
         drawPatch(ctx, x, y, w, h, {
           fill: activePalette.buttonDisabled,
-          stroke: "#b0b0b0",
+          stroke: darkAware("#b0b0b0", activePalette.panelBorder),
           borderRadius: 2
         });
         return;
@@ -2423,7 +2441,7 @@ void main() {
         drawSpinnerArrow(ctx, x, y, true, activePalette.accent);
         return;
       case "Input.UpDown.Up.Down":
-        drawSpinnerArrow(ctx, x, y, true, "#205c90");
+        drawSpinnerArrow(ctx, x, y, true, darkAware("#205c90", activePalette.textNormal));
         return;
       case "Input.UpDown.Up.Disabled":
         drawSpinnerArrow(ctx, x, y, true, activePalette.textDisabled);
@@ -2435,7 +2453,7 @@ void main() {
         drawSpinnerArrow(ctx, x, y, false, activePalette.accent);
         return;
       case "Input.UpDown.Down.Down":
-        drawSpinnerArrow(ctx, x, y, false, "#205c90");
+        drawSpinnerArrow(ctx, x, y, false, darkAware("#205c90", activePalette.textNormal));
         return;
       case "Input.UpDown.Down.Disabled":
         drawSpinnerArrow(ctx, x, y, false, activePalette.textDisabled);
@@ -2451,8 +2469,8 @@ void main() {
       }
       case "ProgressBar.Front": {
         drawPatch(ctx, x, y, w, h, {
-          fill: vGradient(ctx, x, y, h, "#33e858", activePalette.progressFront),
-          stroke: "#008818",
+          fill: vGradient(ctx, x, y, h, darkAware("#33e858", "#6f879f"), activePalette.progressFront),
+          stroke: darkAware("#008818", "#7e91a4"),
           borderRadius: 2
         });
         return;
@@ -2498,14 +2516,14 @@ void main() {
         });
         ctx.fillStyle = vGradient(ctx, x + 1, y + 1, 18, activePalette.titleActiveTop, activePalette.titleActiveBottom);
         ctx.fillRect(x + 1, y + 1, w - 2, 18);
-        ctx.fillStyle = "#205c90";
+        ctx.fillStyle = darkAware("#205c90", activePalette.panelBorder);
         ctx.fillRect(x + 1, y + 19, w - 2, 1);
         return;
       }
       case "CategoryList.Header": {
         drawPatch(ctx, x, y, w, h, {
           fill: vGradient(ctx, x, y, h, activePalette.titleActiveTop, activePalette.titleActiveBottom),
-          stroke: "#205c90",
+          stroke: darkAware("#205c90", activePalette.panelBorder),
           borderRadius: 3
         });
         return;
@@ -4244,6 +4262,10 @@ void main() {
     const n = parseInt(h, 16);
     return color(n >> 16 & 255, n >> 8 & 255, n & 255, 255);
   }
+  function paletteIsDark2(palette) {
+    const c = paletteColor(palette.canvasBg);
+    return c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 < 96;
+  }
   var ATLAS_SIZE3 = 512;
   var HALF_TEXEL = 0.5 / ATLAS_SIZE3;
   var P_TL = 0;
@@ -4543,7 +4565,8 @@ void main() {
         w: r.w - offset * 2,
         h: r.h - offset * 2
       };
-      this.renderer.setDrawColor(color(0, 0, 0, 255));
+      const palette = this.dynamicSkin.getPalette();
+      this.renderer.setDrawColor(paletteIsDark2(palette) ? paletteColor(palette.accent) : color(0, 0, 0, 255));
       let skip = true;
       const halfW = Math.floor(rect2.w * 0.5);
       for (let i = 0; i < halfW; i++) {
@@ -4659,7 +4682,8 @@ void main() {
         r2.w -= barSize;
         r2.y += r2.h * 0.5 - 1;
         r2.h = 1;
-        this.renderer.setDrawColor(color(0, 0, 0, 100));
+        const palette2 = this.dynamicSkin.getPalette();
+        this.renderer.setDrawColor(paletteIsDark2(palette2) ? paletteColor(palette2.panelBorder) : color(0, 0, 0, 100));
         this.drawSliderNotchesH(r2, numNotches, barSize * 0.5);
         this.renderer.drawFilledRect(r2);
         return;
@@ -4669,7 +4693,8 @@ void main() {
       r.h -= barSize;
       r.x += r.w * 0.5 - 1;
       r.w = 1;
-      this.renderer.setDrawColor(color(0, 0, 0, 100));
+      const palette = this.dynamicSkin.getPalette();
+      this.renderer.setDrawColor(paletteIsDark2(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 100));
       this.drawSliderNotchesV(r, numNotches, barSize * 0.4);
       this.renderer.drawFilledRect(r);
     }
@@ -4770,11 +4795,13 @@ void main() {
     drawMenuStrip(ctrl) {
       const r = ctrl.getRenderBounds();
       const renderer = this.renderer;
-      renderer.setDrawColor(paletteColor(this.dynamicSkin.getPalette().menuStripBg));
+      const palette = this.dynamicSkin.getPalette();
+      const dark = paletteIsDark2(palette);
+      renderer.setDrawColor(paletteColor(palette.menuStripBg));
       renderer.drawFilledRect(r);
-      renderer.setDrawColor(color(255, 255, 255, 255));
+      renderer.setDrawColor(dark ? paletteColor(palette.panelHighlight) : color(255, 255, 255, 255));
       renderer.drawFilledRect(rect(r.x, r.y, r.w, 1));
-      renderer.setDrawColor(color(160, 160, 160, 255));
+      renderer.setDrawColor(dark ? paletteColor(palette.panelBorder) : color(160, 160, 160, 255));
       renderer.drawFilledRect(rect(r.x, r.y + r.h - 1, r.w, 1));
     }
     drawMenu(ctrl, paddingDisabled) {
@@ -4797,7 +4824,8 @@ void main() {
       this.drawSingle("Menu.RightArrow", ctrl.getRenderBounds());
     }
     drawMenuDivider(ctrl) {
-      this.renderer.setDrawColor(color(0, 0, 0, 100));
+      const palette = this.dynamicSkin.getPalette();
+      this.renderer.setDrawColor(paletteIsDark2(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 100));
       this.renderer.drawFilledRect(ctrl.getRenderBounds());
     }
     // ======================================================================
@@ -4918,7 +4946,8 @@ void main() {
       }
       this.renderer.setDrawColor(col);
       this.renderer.drawFilledRect(rect2);
-      this.renderer.setDrawColor(color(0, 0, 0, 255));
+      const palette = this.dynamicSkin.getPalette();
+      this.renderer.setDrawColor(paletteIsDark2(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 255));
       this.renderer.drawLinedRect(rect2);
     }
     // ======================================================================
@@ -5115,6 +5144,7 @@ void main() {
       // instance without reaching back through every control's
       // construction path.
       this._colorIsExplicit = false;
+      this._colorPreset = null;
       this._colorOverride = color(255, 255, 255, 0);
       this._wrap = false;
       // Child Text lines populated by `refreshSizeWrap` — one per wrapped
@@ -5159,10 +5189,20 @@ void main() {
     setTextColor(c) {
       this._color = { r: c.r, g: c.g, b: c.b, a: c.a };
       this._colorIsExplicit = true;
+      this._colorPreset = null;
       this.redraw();
     }
     textColor() {
+      if (this._colorPreset) {
+        const skin = this.getSkinOrNull();
+        if (skin) return this.colorForPreset(skin, this._colorPreset);
+      }
       return this._color;
+    }
+    setTextColorPreset(preset) {
+      this._colorPreset = preset;
+      this._colorIsExplicit = false;
+      this.redraw();
     }
     setTextColorOverride(c) {
       this._colorOverride = { r: c.r, g: c.g, b: c.b, a: c.a };
@@ -5170,6 +5210,13 @@ void main() {
     }
     textColorOverride() {
       return this._colorOverride;
+    }
+    effectiveTextColor(skin) {
+      const baseColor = this._colorPreset ? this.colorForPreset(skin, this._colorPreset) : this._colorIsExplicit ? this._color : skin.colors.label.default;
+      if (!this._colorIsExplicit && this._colorOverride.a === 0 && baseColor.r > 128 && this.isDisabledInTree()) {
+        return skin.colors.button.disabled;
+      }
+      return this._colorOverride.a === 0 ? baseColor : this._colorOverride;
     }
     // =====================================================================
     // Wrap
@@ -5283,7 +5330,9 @@ void main() {
         const t = new _Text(this);
         t.setText(line.replace(/\s+$/, ""));
         t.setFont(font2);
-        t.setTextColor(this._color);
+        if (this._colorPreset) t.setTextColorPreset(this._colorPreset);
+        else if (this._colorIsExplicit) t.setTextColor(this._color);
+        if (this._colorOverride.a !== 0) t.setTextColorOverride(this._colorOverride);
         t.setPos(pad.left, y);
         t.refreshSize();
         this._lines.push(t);
@@ -5307,9 +5356,7 @@ void main() {
       this.resolveFont();
       const font2 = this._font;
       if (!font2) return;
-      const baseColor = this._colorIsExplicit ? this._color : skin.colors.label.default;
-      const c = this._colorOverride.a === 0 ? baseColor : this._colorOverride;
-      skin.renderer.setDrawColor(c);
+      skin.renderer.setDrawColor(this.effectiveTextColor(skin));
       const pad = this.getPadding();
       skin.renderer.renderText(font2, point(pad.left, pad.top), this._text);
     }
@@ -5351,6 +5398,27 @@ void main() {
       const skin = this.getSkinOrNull();
       if (!skin) return;
       this._font = skin.getDefaultFont();
+    }
+    isDisabledInTree() {
+      let node = this;
+      while (node) {
+        if (node.isDisabled()) return true;
+        node = node.parent;
+      }
+      return false;
+    }
+    colorForPreset(skin, preset) {
+      switch (preset) {
+        case "bright":
+          return skin.colors.label.bright;
+        case "dark":
+          return skin.colors.label.dark;
+        case "highlight":
+          return skin.colors.label.highlight;
+        case "default":
+        default:
+          return skin.colors.label.default;
+      }
     }
     /**
      * Variant of getSkin() that returns null instead of throwing, for the
@@ -5460,6 +5528,9 @@ void main() {
     textColor() {
       return this._text.textColor();
     }
+    effectiveTextColor(skin) {
+      return this._text.effectiveTextColor(skin);
+    }
     setTextColorOverride(c) {
       this._text.setTextColorOverride(c);
     }
@@ -5518,16 +5589,16 @@ void main() {
     // Skin color presets (label.default / bright / dark / highlight)
     // =====================================================================
     makeColorNormal() {
-      this.setTextColor(this.getSkin().colors.label.default);
+      this._text.setTextColorPreset("default");
     }
     makeColorBright() {
-      this.setTextColor(this.getSkin().colors.label.bright);
+      this._text.setTextColorPreset("bright");
     }
     makeColorDark() {
-      this.setTextColor(this.getSkin().colors.label.dark);
+      this._text.setTextColorPreset("dark");
     }
     makeColorHighlight() {
-      this.setTextColor(this.getSkin().colors.label.highlight);
+      this._text.setTextColorPreset("highlight");
     }
     // =====================================================================
     // Value aliases (GWEN exposes Get/SetValue on Label for use as a
@@ -6484,7 +6555,7 @@ void main() {
     render(skin) {
       skin.drawMenuItem(this, this.isMenuOpen(), this._checkable && this._checked);
       if (this._accelerator) {
-        this._accelerator.setTextColorOverride(this.textColor());
+        this._accelerator.setTextColorOverride(this.effectiveTextColor(skin));
       }
     }
   };
@@ -7789,6 +7860,7 @@ void main() {
       this._blocks = [];
       this._rebuildRequired = true;
       this._defaultColor = color(255, 255, 255, 255);
+      this._defaultColorIsExplicit = false;
       this.setMouseInputEnabled(false);
     }
     // =====================================================================
@@ -7805,11 +7877,11 @@ void main() {
       for (let i = 0; i < parts.length; i++) {
         if (i > 0) this._blocks.push({ kind: "newline" });
         if (parts[i].length > 0) {
-          const src = col ?? this._defaultColor;
+          const src = col ?? (this._defaultColorIsExplicit ? this._defaultColor : null);
           this._blocks.push({
             kind: "text",
             text: parts[i],
-            color: { r: src.r, g: src.g, b: src.b, a: src.a },
+            color: src ? { r: src.r, g: src.g, b: src.b, a: src.a } : null,
             font: font2 ?? null
           });
         }
@@ -7829,6 +7901,7 @@ void main() {
     }
     setDefaultTextColor(c) {
       this._defaultColor = { r: c.r, g: c.g, b: c.b, a: c.a };
+      this._defaultColorIsExplicit = true;
     }
     // =====================================================================
     // Layout
@@ -7890,7 +7963,7 @@ void main() {
           }
           const t = new Text(this);
           if (font2) t.setFont(font2);
-          t.setTextColor(b.color);
+          if (b.color) t.setTextColor(b.color);
           t.setText(tok);
           t.refreshSize();
           t.setPos(x, y);
@@ -8292,7 +8365,6 @@ void main() {
       this._cursorEnd = 0;
       this._editable = true;
       this._selectAll = false;
-      this._caretColor = color(30, 30, 30, 255);
       this._nextCaretBlink = 0;
       this._caretVisible = true;
       // Pixel offset applied to the inner Text when the caret would
@@ -8705,7 +8777,7 @@ void main() {
           1,
           this.height() - pad.top - pad.bottom
         );
-        skin.renderer.setDrawColor(this._caretColor);
+        skin.renderer.setDrawColor(skin.colors.label.default);
         skin.renderer.drawFilledRect(caretRect);
       }
     }
@@ -8869,7 +8941,7 @@ void main() {
         const here = locate(cursorPos);
         const caretX = pad.left + skin.renderer.measureText(font2, here.prefix).x;
         const caretY = pad.top + here.line * lineH;
-        skin.renderer.setDrawColor(this._caretColor);
+        skin.renderer.setDrawColor(skin.colors.label.default);
         skin.renderer.drawFilledRect(rect(caretX, caretY, 1, lineH));
       }
     }
@@ -12121,12 +12193,12 @@ void main() {
       if (!this._drawHover) return;
       const renderer = skin.renderer;
       const rb = this.getRenderBounds();
-      renderer.setDrawColor(color(255, 100, 255, 20));
+      renderer.setDrawColor(color(38, 128, 235, 24));
       renderer.drawFilledRect(rb);
       if (this._hoverRect.w === 0) return;
-      renderer.setDrawColor(color(255, 100, 255, 100));
+      renderer.setDrawColor(color(38, 128, 235, 110));
       renderer.drawFilledRect(this._hoverRect);
-      renderer.setDrawColor(color(255, 100, 255, 200));
+      renderer.setDrawColor(color(112, 178, 255, 220));
       renderer.drawLinedRect(this._hoverRect);
     }
   };

@@ -35,6 +35,11 @@ function paletteColor(hex: string): Color {
   return color((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff, 255);
 }
 
+function paletteIsDark(palette: Palette): boolean {
+  const c = paletteColor(palette.canvasBg);
+  return c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 < 96;
+}
+
 // All regions live inside the 512×512 atlas.
 const ATLAS_SIZE = 512;
 
@@ -425,7 +430,8 @@ export class Skin {
       w: r.w - offset * 2,
       h: r.h - offset * 2,
     };
-    this.renderer.setDrawColor(color(0, 0, 0, 255));
+    const palette = this.dynamicSkin.getPalette();
+    this.renderer.setDrawColor(paletteIsDark(palette) ? paletteColor(palette.accent) : color(0, 0, 0, 255));
     let skip = true;
     const halfW = Math.floor(rect.w * 0.5);
     for (let i = 0; i < halfW; i++) {
@@ -556,7 +562,8 @@ export class Skin {
       r.w -= barSize;
       r.y += r.h * 0.5 - 1;
       r.h = 1;
-      this.renderer.setDrawColor(color(0, 0, 0, 100));
+      const palette = this.dynamicSkin.getPalette();
+      this.renderer.setDrawColor(paletteIsDark(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 100));
       this.drawSliderNotchesH(r, numNotches, barSize * 0.5);
       this.renderer.drawFilledRect(r);
       return;
@@ -566,7 +573,8 @@ export class Skin {
     r.h -= barSize;
     r.x += r.w * 0.5 - 1;
     r.w = 1;
-    this.renderer.setDrawColor(color(0, 0, 0, 100));
+    const palette = this.dynamicSkin.getPalette();
+    this.renderer.setDrawColor(paletteIsDark(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 100));
     this.drawSliderNotchesV(r, numNotches, barSize * 0.4);
     this.renderer.drawFilledRect(r);
   }
@@ -692,13 +700,15 @@ export class Skin {
     const r = ctrl.getRenderBounds();
     const renderer = this.renderer;
     // Use the active palette so theme switches re-color the strip.
-    renderer.setDrawColor(paletteColor(this.dynamicSkin.getPalette().menuStripBg));
+    const palette = this.dynamicSkin.getPalette();
+    const dark = paletteIsDark(palette);
+    renderer.setDrawColor(paletteColor(palette.menuStripBg));
     renderer.drawFilledRect(r);
-    // Top highlight (1px white).
-    renderer.setDrawColor(color(255, 255, 255, 255));
+    // Top highlight.
+    renderer.setDrawColor(dark ? paletteColor(palette.panelHighlight) : color(255, 255, 255, 255));
     renderer.drawFilledRect(mkRect(r.x, r.y, r.w, 1));
-    // Bottom shadow (1px medium grey).
-    renderer.setDrawColor(color(160, 160, 160, 255));
+    // Bottom shadow / separator.
+    renderer.setDrawColor(dark ? paletteColor(palette.panelBorder) : color(160, 160, 160, 255));
     renderer.drawFilledRect(mkRect(r.x, r.y + r.h - 1, r.w, 1));
   }
 
@@ -725,7 +735,8 @@ export class Skin {
   }
 
   drawMenuDivider(ctrl: Base): void {
-    this.renderer.setDrawColor(color(0, 0, 0, 100));
+    const palette = this.dynamicSkin.getPalette();
+    this.renderer.setDrawColor(paletteIsDark(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 100));
     this.renderer.drawFilledRect(ctrl.getRenderBounds());
   }
 
@@ -888,7 +899,8 @@ export class Skin {
     }
     this.renderer.setDrawColor(col);
     this.renderer.drawFilledRect(rect);
-    this.renderer.setDrawColor(color(0, 0, 0, 255));
+    const palette = this.dynamicSkin.getPalette();
+    this.renderer.setDrawColor(paletteIsDark(palette) ? paletteColor(palette.panelBorder) : color(0, 0, 0, 255));
     this.renderer.drawLinedRect(rect);
   }
 
