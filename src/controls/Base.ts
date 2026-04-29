@@ -97,6 +97,14 @@ export class Base {
   private _cursor: number = CursorType.Normal;
   private _toolTip: Base | null = null;
 
+  // ---- context menu ----
+  // Stored as `Base` (not `Menu`) to avoid an import cycle: `Menu`
+  // already imports `Base` as a runtime dependency, and a runtime
+  // import in the other direction would loop. Callers pass a `Menu`
+  // instance; Canvas narrows back to `Menu` via `instanceof` before
+  // opening.
+  private _contextMenu: Base | null = null;
+
   // Accelerator → handler bindings. Populated by `addAccelerator` (used
   // e.g. by MenuItem.setAccelerator). Canvas.inputAccelerator walks the
   // tree calling `handleAccelerator(text)` until a control consumes it.
@@ -1174,6 +1182,51 @@ export class Base {
 
   getToolTip(): Base | null {
     return this._toolTip;
+  }
+
+  // =======================================================================
+  // Context menu
+  //
+  // Each control may attach a `Menu` to be shown on right-click. When
+  // the user right-clicks anywhere on the canvas, `Canvas` walks the
+  // hovered-control's parent chain calling `onContextMenuRequest(x, y)`
+  // and opens the first non-null `Menu` it finds. A control with no
+  // explicit menu defers to its parent; `Canvas` itself extends `Base`,
+  // so `canvas.setContextMenu(...)` becomes the global "background"
+  // menu shown when nothing in the chain overrides.
+  //
+  // The field is typed `Base` to avoid a runtime import cycle (`Menu`
+  // already imports `Base`); callers pass a `Menu` and `Canvas`
+  // narrows back to `Menu` via `instanceof` before opening.
+  // =======================================================================
+
+  /**
+   * Attach a context menu (right-click menu) to this control. Pass
+   * `null` to clear. The menu is not destroyed by this call — it stays
+   * around for future right-clicks until the caller disposes it.
+   *
+   * The menu should be parented to the canvas (or another top-level
+   * container) so it draws above everything else; `Canvas` will
+   * reparent automatically if needed when the menu is opened.
+   */
+  setContextMenu(menu: Base | null): void {
+    this._contextMenu = menu;
+  }
+
+  getContextMenu(): Base | null {
+    return this._contextMenu;
+  }
+
+  /**
+   * Hook called by Canvas on right-click to find the menu to show.
+   * Default returns the menu set via `setContextMenu`. Override this
+   * to build menus dynamically (populate items based on the click
+   * location, suppress for certain regions, etc.). Return `null` to
+   * defer to the parent in the chain — Canvas walks up until something
+   * returns a non-null menu.
+   */
+  onContextMenuRequest(_x: number, _y: number): Base | null {
+    return this._contextMenu;
   }
 
   // =======================================================================

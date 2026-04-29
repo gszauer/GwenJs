@@ -4,6 +4,68 @@ Append-only. Orchestrator writes a one-paragraph entry after each phase complete
 
 ---
 
+## 2026-04-28 (later) — Right-click follow-ups: global menu in demo + Label mouse-input gotcha
+
+Two issues from the user after the initial right-click context-menu landing:
+
+1. **Dynamic-menu Label didn't catch its right-click.** `Label` ships with `setMouseInputEnabled(false)` (the conventional "labels are paint-only" default), so right-clicks pass straight through to the parent — the panel-level menu opened instead of the per-label dynamic one. Fixed by calling `setMouseInputEnabled(true)` on the dynamic + deferred labels in the `RightClick` demo. Documented as a gotcha in `agent_docs.md` (and called out in the cookbook entry above the dynamic-hook example).
+2. **Global Cut/Copy/Paste regardless of demo.** The previous demo only set the menu on the `RightClick` demo's panel; switching to any other demo (Button, Slider, ...) had no right-click affordance. Added a canvas-level `globalMenu` (Cut / Copy / Paste with Ctrl+ accelerators) in the demo bootstrap, attached via `canvas.setContextMenu(globalMenu)`. Now right-clicking on any empty area in any demo fires the global; specific overrides (the `RightClick` panel + button menus) still take precedence in their own scope.
+
+Verified visually: dynamic label now opens its per-click menu correctly (shows "Clicked at (315, 98)" etc.); switching to the Button demo and right-clicking empty area opens the global Cut/Copy/Paste menu. Full suite still **1694/1694 green**.
+
+## 2026-04-28 (later) — Right-click context menus
+
+New top-level feature: every control can attach a context menu shown on right-click.
+
+**API.** Two methods on `Base`:
+
+- `setContextMenu(menu)` / `getContextMenu()` — attach a `Menu` to a control. The field is typed as `Base | null` to avoid a `Base ↔ Menu` runtime import cycle (Menu already imports Base); Canvas narrows back to `Menu` via `instanceof` before opening.
+- `onContextMenuRequest(x, y): Base | null` — virtual hook called on each right-click. Default returns the menu set above; override to build menus dynamically (e.g. a viewport that includes the click position in its commands) or to defer to a parent by returning `null`.
+
+**Bubble rule.** When the user right-clicks, `Canvas.tryShowContextMenu` walks from the hovered control up through every parent calling `onContextMenuRequest`; the first non-null `Menu` wins and opens at the cursor. The walk fires *before* the "no specific control was hovered" early-return so a `canvas.setContextMenu(global)` produces a true app-wide fallback that fires on empty-area right-clicks too. The walk halts on `isMenuComponent` so right-clicking inside an already-open menu doesn't summon another. Auto-reparents the menu onto the canvas so it always draws on top regardless of where it was originally created.
+
+**Demo.** New `Non-Standard → RightClick` entry showing all four configurations: panel-level "global" with submenus + accelerators + dividers, a button with its own override, a Label that builds a fresh menu per click via `onContextMenuRequest` (including the click coordinates in its items), and a Label that returns `null` from its hook to defer to the panel — proves the bubble rule.
+
+**Tests.** Eight cases in `context-menu.spec.ts`: round-trip API, basic right-click open at cursor, child→parent bubbling, canvas-level fallback, dynamic hook returning a menu, null hook deferring up the chain, auto-reparenting onto canvas, no-menu pass-through. Full suite: **1694/1694 green**.
+
+Bundle: 205.6 KB raw / 50.3 KB gzip.
+
+## 2026-04-28 (later) — ActionBar: tighten separator in multi-column mode
+
+Bug: in two-column tool palettes, each separator left an empty grid row after it. Cause: layout advanced by `cells += cols` after placing a separator (one full slot row of 28 px) even though the separator itself only takes 8 px. Switched the multi-column layout from cell-index math to direct Y tracking — items advance Y by the slot height; separators advance Y by their own 8 px height. Next row of items now resumes immediately after the separator's 8 px line. New regression test (`action-bar.spec.ts` #10c) asserts the exact post-separator Y offset.
+
+## 2026-04-28 (later) — Docking: single-tab drag = whole-dock drag
+
+User noticed a subtle difference between dragging a tab and dragging the strip's empty area when a docked panel has only one tab — the tab fired `TabButtonMove` while the empty area fired `TabWindowMove`. Same end result for the user, but different package names produced inconsistent intermediate state and broke an invariant for any future drop target that distinguishes the two. Fixed in `TabButton.dragAndDrop_StartDragging` by promoting the single-tab drag to `TabWindowMove` (with `drawcontrol = the TabControl`) when the strip is configured as a header (i.e. it's a `DockedTabControl`) **and** `tabCount() === 1`. With 2+ tabs the conventional single-tab drag still applies. The check is duck-typed via the strip's existing `showsAsHeader()` method to avoid a circular import between `TabButton` and `DockedTabControl`. New regression test (`dock-base.spec.ts` #23) drives both the lone-tab and multi-tab cases. Full suite: **1676/1676 green**.
+
+## 2026-04-28 (later) — ActionBar: columns + radio mode + non-square centering
+
+Three follow-ups to the new `ActionBar`:
+
+- **`setColumns(n)`** — vertical (tool-palette) mode now supports a multi-column grid for Photoshop-style two-column toolboxes. `n > 1` switches the layout from "items dock Top" to a manual grid laid out by an overridden `layout()`: items flow left-to-right then top-to-bottom, separators span the full row. The bar's width auto-tracks `itemSize * n + 2*padding`.
+- **`setRadioMode(b)`** — single-active toggle behaviour across the bar's `ActionBarButton` children. Activating one deactivates the previous active; clicking the active button can't deactivate it (always exactly one tool selected). Implemented by subscribing to each button's `onToggleOn` / `onToggleOff` and reflecting state through `_activeButton`. `setActiveButton(btn)` / `getActiveButton()` round out the API; turning radio mode on retroactively reconciles existing toggle states (first on stays on, the rest go off).
+- **`addItem` auto-centering** — non-square widgets like `ComboBox` were getting visually stretched by the dock pass (the `<select>`-style arrow on the right edge looked elongated). `addItem` now applies a top/bottom (or left/right) margin equal to `(slot - height) / 2` so the widget keeps its natural size, centered within the slot.
+
+Demo updated to showcase all three: a single-column palette + a two-column palette side-by-side (both in radio mode, "Move" pre-selected), plus the existing horizontal Bold/Italic/Underline + ComboBox + Undo/Redo bar — the ComboBox dropdown arrow is now correctly proportioned. New tests in `action-bar.spec.ts`: #10b grid placement (asserts the four corner positions), #11 radio activation deactivates the previous, #12 radio mode locks the active button on, #13 retroactive reconciliation, #14 addItem margin math. Visual baselines refreshed. Full suite: **1674/1674 green**. Bundle: 205.0 KB raw / 49.8 KB gzip.
+
+## 2026-04-28 (later) — ActionBar control (toolbar / tool palette)
+
+New control `ActionBar` (`src/controls/ActionBar.ts`) — a flexible toolbar covering the two roles the user called out: horizontal "quick action" bar (Word-style Bold/Italic + dropdown) and vertical "tool palette" (Photoshop-style icon column on the side of a 3D view). The bar's perpendicular dimension is locked to `itemSize + 2*padding`; the primary dimension is caller-controlled, so it composes naturally with `dock(Pos.Top)` / `dock(Pos.Left)` and works as a child of any container — `WindowControl`, `DockedTabControl` page, free-floating canvas child.
+
+API:
+
+- `addButton(text, icon?: Texture)` → `ActionBarButton` (square, Button subclass — text + icon + toggle + tooltip).
+- `addSeparator()` → `ActionBarSeparator` (thin divider; orientation auto-detected from docked aspect, so the same class works for both bar orientations).
+- `addItem<T extends Base>(ctrl)` → reparents an arbitrary control into the bar, useful for drop-downs (`ComboBox`) and custom widgets.
+- `setVertical(b)` flips orientation; existing items re-dock from `Pos.Left` to `Pos.Top`. `setItemSize(px)` retunes the slot square + bar thickness.
+- Background reuses the existing `Skin.drawMenuStrip` 9-slice region for visual consistency with `MenuStrip` / `StatusBar`.
+
+Demo: new `Containers → ActionBar` entry showing both a vertical Photoshop-style palette (Move toggled active, Brush, Eraser, Text with separator) and a horizontal Word-style quick-action bar (Bold/Italic/Underline + font ComboBox + separator + Undo/Redo). Icons drawn procedurally via Canvas2D so the demo stays asset-free.
+
+Tests: `tests/action-bar.spec.ts` — 10 cases covering construction, orientation flip with re-docking, button/separator/item add paths, pointer click → onPress, toggle state, item-size reflow, tooltip, render-produces-pixels. Visual baselines for the demo's `gwen-canvas` snapshot regenerated to absorb the new sidebar row from the demo entry. Full suite: **1664/1664 green**. Bundle: 203.3 KB raw / 49.4 KB gzip.
+
+Docs updated: `agent_docs.md` (table rows for `ActionBar` / `ActionBarButton` / `ActionBarSeparator`, new "Build a toolbar" cookbook entry; `ToolBarButton` / `ToolBarStrip` flagged as legacy GWEN port), `documentation.md` (new "Toolbars" family).
+
 ## 2026-04-28 (later) — DockedTabControl: tabs-in-header layout
 
 `DockedTabControl` previously stacked a separate `TabTitleBar` on Top + a `TabStrip` on Bottom; the strip even hid itself when only one tab existed. The user wanted the modern VS-Code / browser look — tabs sitting in the title bar at the top. Refactor:

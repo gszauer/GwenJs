@@ -90,12 +90,14 @@ Controls are grouped loosely into families. A one-liner each:
 - **Menus:** `Menu`, `MenuItem`, `MenuDivider`, `MenuStrip`, `ComboBox`.
 - **Tabs:** `TabControl`, `TabButton`, `TabStrip`, `DockedTabControl`, `PageControl`.
 - **Windows:** `WindowControl`, `ResizableControl`, `WindowCloseButton`, `ToolBarStrip`, `ToolBarButton`.
+- **Toolbars:** `ActionBar` (flexible horizontal / vertical toolbar with `addButton` / `addSeparator` / `addItem`), `ActionBarButton`, `ActionBarSeparator`.
 - **Splitters:** `SplitterBar`, `SplitterVertical`, `SplitterHorizontal`, `CrossSplitter`.
 - **Docking:** `DockBase`.
 - **Colour:** `ColorPicker`, `HSVColorPicker`, `ColorLerpBox`, `ColorSlider`, `ColorDisplay`.
 - **Property grid:** `Properties`, `PropertyRow`, `PropertyText`, `PropertyCheckbox`, `PropertyNumeric`, `PropertyComboBox`, `PropertyColorSelector`, `PropertyFile`, `PropertyFolder`, `PropertyTree`, `PropertyTreeNode`.
 - **File pickers:** `FilePicker` (read-only path + clear + Browse…; holds a real `File` blob), `FolderPicker` (`webkitdirectory`-based).
 - **Dialogs:** `Dialogs.fileOpen`, `Dialogs.fileSave`, `Dialogs.folderOpen`, `Dialogs.query`.
+- **Right-click menus:** `Base.setContextMenu(menu)` attaches a `Menu` to any control. Right-clicks bubble up the parent chain until a control returns a menu; canvas-level menus act as the global "background" fallback. Override `onContextMenuRequest(x, y)` to build menus on demand.
 - **Layout helpers:** `Layout.Position`, `Layout.Center`, `Layout.Table`, `Layout.TableRow`, `Layout.Tile`.
 
 ## 6. Docking
@@ -120,6 +122,7 @@ Each docked panel's tab strip docks **Top** and renders as a gradient header —
 
 - **Tab button drag** (`TabButtonMove`). Grabbing a `TabButton` and dropping it onto another dock's edge / fill reparents that single tab.
 - **Whole-dock drag** (`TabWindowMove`). Grabbing empty space on the strip — anywhere not covered by a tab — drags the entire `DockedTabControl` and its tabs as a unit.
+- **Single-tab promotion.** When a docked panel has exactly one tab, grabbing that tab promotes the drag to the whole-dock variant automatically — so "drag the lone tab" and "drag the strip's empty area" are indistinguishable. With two or more tabs the conventional single-tab drag applies.
 
 Hovering with either drag in flight paints a directional highlight inside the receiving dock so the user can preview which slot will absorb the drop. Child docks hide themselves when emptied and reappear when a tab is dropped on their edge.
 

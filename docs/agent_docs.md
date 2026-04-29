@@ -81,8 +81,11 @@ Every public control, its direct base class, primary signals, and purpose. Const
 | `ListBoxRow` | `Button` | — (via ListBox) | Row entry. |
 | `TreeNode` | `Base` | `onNamePress`, `onRightPress`, `onSelect`, `onUnselect`, `onSelectChange` | Tree row with children. |
 | `TreeControl` | `TreeNode` | — (inherits) | Scrollable tree root. |
-| `ToolBarButton` | `Button` | — | Toolbar icon button. |
-| `ToolBarStrip` | `Base` | — | Row of ToolBarButtons. |
+| `ToolBarButton` | `Button` | — | Toolbar icon button (legacy GWEN port; horizontal-only, 20×20). |
+| `ToolBarStrip` | `Base` | — | Row of ToolBarButtons (legacy GWEN port). |
+| `ActionBar` | `Base` | — | Flexible horizontal/vertical toolbar. `addButton(text, icon?)` → `ActionBarButton`; `addSeparator()`; `addItem(ctrl)` (auto-centers non-square widgets like `ComboBox`). `setVertical(true)` flips orientation; `setItemSize(px)` resizes the slot; `setColumns(n)` lays vertical items in an n-column grid (Photoshop two-column palette); `setRadioMode(true)` enforces single-active toggle behavior across `ActionBarButton` children. |
+| `ActionBarButton` | `Button` | inherits `onPress` etc. | Square (default 28×28) Button tuned for action-bar slots. Supports text, icon (`setImageTexture`), toggle, tooltip. |
+| `ActionBarSeparator` | `Base` | — | Thin divider; orientation auto-detected from docked size. |
 | `CollapsibleCategory` | `Base` | `onSelection` | Expandable category. Header is left-aligned with a `▼` / `▶` chevron that flips with the toggle state. |
 | `CollapsibleList` | `ScrollControl` | — | Multi-category list. |
 | `TabButton` | `Button` | — | Tab header. |
@@ -177,7 +180,7 @@ dock.getBottom().getTabControl()?.addPage('Console');
 dock.getTabControl()?.addPage('Main');
 ```
 
-Each child dock's tab strip docks Top and renders as a gradient header bar with the tab buttons sitting inside it (VS-Code / browser style). Dragging a tab button reparents that single tab onto another dock's edge (`TabButtonMove`); dragging empty space on the strip moves the whole dock (`TabWindowMove`). When a dock loses its last tab, its parent hides it; a subsequent drop on the same edge resurrects it.
+Each child dock's tab strip docks Top and renders as a gradient header bar with the tab buttons sitting inside it (VS-Code / browser style). Dragging a tab button reparents that single tab onto another dock's edge (`TabButtonMove`); dragging empty space on the strip moves the whole dock (`TabWindowMove`). **Single-tab promotion:** when a docked panel has exactly one tab, grabbing that tab is treated as a whole-dock drag too — so "grab the lone tab" and "grab the title bar" produce identical results. With two or more tabs, the conventional single-tab drag kicks back in. When a dock loses its last tab, its parent hides it; a subsequent drop on the same edge resurrects it.
 
 ### Open a modal dialog
 
@@ -191,12 +194,46 @@ Gwen.Dialogs.query(
 );
 ```
 
-### Context menu at pointer
+### Right-click context menu
+
+Every `Base` carries an optional context menu shown automatically on right-click. `setContextMenu(menu)` attaches it; the canvas walks from the hovered control up the parent chain on right-press and opens the first non-null menu it finds. Setting the menu on the canvas itself produces a global "background" menu that fires anywhere nothing else overrides.
 
 ```ts
 const menu = new Gwen.Menu(canvas);
-menu.addItem('Copy').onSelect.on(() => console.log('copy'));
-menu.addItem('Paste').onSelect.on(() => console.log('paste'));
+menu.addItem('Cut').setAccelerator('Ctrl+X').onMenuItemSelected.on(() => log('cut'));
+menu.addItem('Copy').setAccelerator('Ctrl+C').onMenuItemSelected.on(() => log('copy'));
+menu.addDivider();
+const more = menu.addItem('More');                // submenu
+more.getMenu().addItem('First');
+more.getMenu().addItem('Second');
+
+button.setContextMenu(menu);                      // per-control override
+canvas.setContextMenu(globalMenu);                // app-wide fallback
+```
+
+**Note on `Label`:** labels (and any control that disables mouse input) won't catch the right-click — it bubbles straight to the parent. To make a label respond to right-clicks, call `label.setMouseInputEnabled(true)` first.
+
+To build menus dynamically (a viewport that wants commands like "Frame here"), override `onContextMenuRequest(x, y)` — it runs on every right-click and can return a freshly-built `Menu` (use `setDeleteOnClose(true)` so it cleans up):
+
+```ts
+(viewport as Gwen.Base & { onContextMenuRequest: (x: number, y: number) => Gwen.Base | null }).onContextMenuRequest = (x, y) => {
+  const m = new Gwen.Menu(canvas);
+  m.setDeleteOnClose(true);
+  m.addItem('Frame here').onMenuItemSelected.on(() => frameAt(x, y));
+  return m;
+};
+```
+
+Returning `null` from the hook defers to the parent in the chain — useful for telling a child "use the parent's menu, not mine". Right-clicking inside an already-open menu does **not** trigger another menu (the chain walk halts on `isMenuComponent`).
+
+### Bare popup menu at pointer
+
+When you want a popup *without* tying it to a right-click — e.g. opening from a button's `onPress` — drop `setContextMenu` and call `menu.open(point)` directly:
+
+```ts
+const menu = new Gwen.Menu(canvas);
+menu.addItem('Copy').onMenuItemSelected.on(() => log('copy'));
+menu.addItem('Paste').onMenuItemSelected.on(() => log('paste'));
 menu.open(Gwen.point(canvas.mousePosition.x, canvas.mousePosition.y));
 ```
 
@@ -248,6 +285,64 @@ s.setRange(0, 100);
 s.setFloatValue(50);
 s.onValueChanged.on((e) => console.log('value →', (e.controlCaller as Gwen.HorizontalSlider).getFloatValue()));
 ```
+
+### Build a toolbar with `ActionBar`
+
+`ActionBar` is the flexible toolbar — horizontal "quick action" bar (Bold / Italic / fonts) or vertical "tool palette" (Photoshop-style icon column). Use `addButton(text, icon?)` for the common case, `addSeparator()` between groups, and `addItem(ctrl)` to drop in arbitrary controls (most often a `ComboBox`).
+
+```ts
+// Vertical tool palette on the left, Photoshop-style.
+// Radio mode keeps exactly one tool selected.
+const tools = new Gwen.ActionBar(parent);
+tools.setVertical(true);
+tools.setRadioMode(true);
+tools.setBounds(0, 0, 32, 240);
+
+const move  = tools.addButton('', moveIconTex);
+move.setToolTip('Move');
+move.setToggleState(true);          // start with Move selected
+
+tools.addButton('', brushIconTex).setToolTip('Brush');
+tools.addSeparator();
+tools.addButton('', textIconTex).setToolTip('Text');
+```
+
+```ts
+// Two-column variant — same API, just `setColumns(2)`.
+const tools2 = new Gwen.ActionBar(parent);
+tools2.setVertical(true);
+tools2.setColumns(2);
+tools2.setRadioMode(true);
+tools2.setBounds(40, 0, 60, 240);   // width = itemSize*2 + 4 = 60
+// Items flow left-to-right then top-to-bottom; separators span the
+// full row.
+```
+
+```ts
+// Horizontal quick-action bar at the top of a view
+const quick = new Gwen.ActionBar(parent);
+quick.setBounds(40, 0, 480, 32);
+
+const bold = quick.addButton('', boldIconTex);
+bold.setIsToggle(true);
+bold.setToolTip('Bold');
+
+const italic = quick.addButton('', italicIconTex);
+italic.setIsToggle(true);
+
+quick.addSeparator();
+
+const fonts = new Gwen.ComboBox(quick);
+fonts.setSize(140, 22);
+for (const f of ['Helvetica', 'Times']) fonts.addItem(f, f);
+quick.addItem(fonts);
+
+quick.addSeparator();
+const undoBtn = quick.addButton('Undo');
+undoBtn.setSize(56, 28);
+```
+
+The bar's perpendicular dimension auto-tracks `setItemSize(px)`; the primary dimension is caller-controlled (typically `dock(Pos.Top)` for full-width or `dock(Pos.Left)` for full-height). The bar reuses `Skin.drawMenuStrip` for its background so it shares the visual language of the menu / status bars.
 
 ### Pick a file and read its bytes
 
@@ -324,6 +419,7 @@ Handlers receive a fresh `EventInfo` per emit. Don't retain references across fr
 - `Button` (and every subclass) is tabable + keyboard-active by default. Space and Enter on a focused button fire `onPress`; on a focused `CheckBox` / `RadioButton` they toggle. Subclasses that genuinely shouldn't take focus (`MenuItem`, `ListBoxRow`, `TabButton`, window chrome buttons, tree toggle / title) opt out via `setTabable(false)` in their own constructors.
 - List-style containers consume arrows: `ListBox` (Up/Down + Home/End), `RadioButtonController` (Up/Down/Left/Right), `TabControl` (Left/Right/Up/Down + Home/End cycles tabs), `TreeControl` (Up/Down through visible nodes; Left collapses or jumps to parent; Right expands or descends). Each one is itself the single tab stop — its rows / options / pages stay non-tabable.
 - `Slider.setClampToNotches(true)` snaps both the value AND the bar visual on every drag tick. Don't poll `_bar.x()` mid-drag and expect a free-form pixel — it'll be re-pinned to the nearest notch by `onMoved`.
+- `Label` (and `setMouseInputEnabled(false)` controls in general) don't catch right-clicks — they bubble straight through to the parent. If you want a label to show its own context menu, call `label.setMouseInputEnabled(true)` so the right-click hits it before bubbling.
 
 ## Minimal runnable HTML
 

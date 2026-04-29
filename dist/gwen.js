@@ -21,6 +21,9 @@ var Gwen = (() => {
   // src/index.ts
   var index_exports = {};
   __export(index_exports, {
+    ActionBar: () => ActionBar,
+    ActionBarButton: () => ActionBarButton,
+    ActionBarSeparator: () => ActionBarSeparator,
     BAKED_ROW_500: () => BAKED_ROW_500,
     BAKED_ROW_508: () => BAKED_ROW_508,
     Base: () => Base,
@@ -2964,6 +2967,13 @@ void main() {
       this._skin = null;
       this._cursor = CursorType.Normal;
       this._toolTip = null;
+      // ---- context menu ----
+      // Stored as `Base` (not `Menu`) to avoid an import cycle: `Menu`
+      // already imports `Base` as a runtime dependency, and a runtime
+      // import in the other direction would loop. Callers pass a `Menu`
+      // instance; Canvas narrows back to `Menu` via `instanceof` before
+      // opening.
+      this._contextMenu = null;
       // Accelerator → handler bindings. Populated by `addAccelerator` (used
       // e.g. by MenuItem.setAccelerator). Canvas.inputAccelerator walks the
       // tree calling `handleAccelerator(text)` until a control consumes it.
@@ -3911,6 +3921,47 @@ void main() {
       return this._toolTip;
     }
     // =======================================================================
+    // Context menu
+    //
+    // Each control may attach a `Menu` to be shown on right-click. When
+    // the user right-clicks anywhere on the canvas, `Canvas` walks the
+    // hovered-control's parent chain calling `onContextMenuRequest(x, y)`
+    // and opens the first non-null `Menu` it finds. A control with no
+    // explicit menu defers to its parent; `Canvas` itself extends `Base`,
+    // so `canvas.setContextMenu(...)` becomes the global "background"
+    // menu shown when nothing in the chain overrides.
+    //
+    // The field is typed `Base` to avoid a runtime import cycle (`Menu`
+    // already imports `Base`); callers pass a `Menu` and `Canvas`
+    // narrows back to `Menu` via `instanceof` before opening.
+    // =======================================================================
+    /**
+     * Attach a context menu (right-click menu) to this control. Pass
+     * `null` to clear. The menu is not destroyed by this call — it stays
+     * around for future right-clicks until the caller disposes it.
+     *
+     * The menu should be parented to the canvas (or another top-level
+     * container) so it draws above everything else; `Canvas` will
+     * reparent automatically if needed when the menu is opened.
+     */
+    setContextMenu(menu) {
+      this._contextMenu = menu;
+    }
+    getContextMenu() {
+      return this._contextMenu;
+    }
+    /**
+     * Hook called by Canvas on right-click to find the menu to show.
+     * Default returns the menu set via `setContextMenu`. Override this
+     * to build menus dynamically (populate items based on the click
+     * location, suppress for certain regions, etc.). Return `null` to
+     * defer to the parent in the chain — Canvas walks up until something
+     * returns a non-null menu.
+     */
+    onContextMenuRequest(_x, _y) {
+      return this._contextMenu;
+    }
+    // =======================================================================
     // Protected hooks
     // =======================================================================
     onBoundsChanged(oldBounds) {
@@ -4780,609 +4831,134 @@ void main() {
     }
   };
 
-  // src/controls/Canvas.ts
-  var DOUBLE_CLICK_SPEED = 0.5;
-  var KEY_REPEAT_RATE = 0.03;
-  var KEY_REPEAT_DELAY = 0.3;
-  var MAX_MOUSE_BUTTONS = 5;
-  var DRAG_START_THRESHOLD = 5;
-  function nowSec() {
-    return performance.now() / 1e3;
-  }
-  function cursorToCss(c) {
-    switch (c) {
-      case CursorType.Beam:
-        return "text";
-      case CursorType.SizeNS:
-        return "ns-resize";
-      case CursorType.SizeWE:
-        return "ew-resize";
-      case CursorType.SizeNWSE:
-        return "nwse-resize";
-      case CursorType.SizeNESW:
-        return "nesw-resize";
-      case CursorType.SizeAll:
-        return "move";
-      case CursorType.No:
-        return "not-allowed";
-      case CursorType.Wait:
-        return "wait";
-      case CursorType.Finger:
-        return "pointer";
-      case CursorType.Normal:
-      default:
-        return "default";
+  // src/controls/Dragger.ts
+  var Dragger = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this.onDragStart = new Signal();
+      this.onDragged = new Signal();
+      this.onDragEnd = new Signal();
+      this.onDoubleClickLeft = new Signal();
+      this._target = null;
+      this._doMove = true;
+      this._depressed = false;
+      this._holdPos = point();
+      this.setMouseInputEnabled(true);
     }
-  }
-  var Canvas = class extends Base {
-    constructor(skin, htmlCanvas) {
-      super(null);
-      this.isCanvas = true;
-      // --- Canvas-wide input state (was file-statics in GWEN) ---
-      this.hoveredControl = null;
-      this.keyboardFocus = null;
-      this.mouseFocus = null;
-      this.firstTab = null;
-      this.nextTab = null;
-      // Full ordered list of tabable controls under this canvas, rebuilt
-      // every frame in `recurseLayout`. Used by `Base.onKeyTab` to walk
-      // both forward (Tab) and backward (Shift+Tab); `firstTab`/`nextTab`
-      // are kept for back-compat with anything that still reads them.
-      this.tabList = [];
-      // Drag-and-drop dispatch state. `dragCandidate` is set on left-button
-      // press over a draggable control; `dragStarted` flips once the pointer
-      // has moved past `DRAG_START_THRESHOLD` so a stationary click never
-      // triggers a drag. `dragHoverTarget` is the deepest acceptor under the
-      // pointer during an active drag. Cleared on release.
-      this.dragCandidate = null;
-      this.dragPackage = null;
-      // Tracks the control we hid in `beginDrag` so the layout reflows around
-      // it. Restored by `endDrag` (see `restoreDragHiddenSource`).
-      this.dragHiddenSource = null;
-      this.dragHiddenSourceWasHidden = false;
-      this.dragStartPos = point(0, 0);
-      this.dragStarted = false;
-      this.dragHoverTarget = null;
-      this.mousePosition = point(0, 0);
-      this.keyRepeatTarget = null;
-      this.leftMouseDown = false;
-      this.rightMouseDown = false;
-      this.lastClickPos = point(0, 0);
-      // --- Canvas-specific state ---
-      this._drawBackground = false;
-      this._backgroundColor = color(255, 255, 255, 255);
-      this._needsRedraw = true;
-      this._scale = 1;
-      this._delayedDelete = /* @__PURE__ */ new Set();
-      this._delayedDeleteList = [];
-      this._detachInput = null;
-      // Track last applied CSS cursor so we don't thrash `style.cursor` on
-      // every pointer-move. Browsers throttle these writes internally but the
-      // equality check is basically free.
-      this._lastAppliedCursor = -1;
-      this.skin = skin;
-      this.renderer = skin.renderer;
-      this.htmlCanvas = htmlCanvas;
-      this.setSkin(skin);
-      this.keyState = new Array(Key.Count).fill(false);
-      this.keyNextRepeat = new Array(Key.Count).fill(0);
-      this.lastClickTime = new Array(MAX_MOUSE_BUTTONS).fill(-1);
-      this._detachInput = attachInput(htmlCanvas, this);
+    // =====================================================================
+    // Config
+    // =====================================================================
+    setTarget(t) {
+      this._target = t;
     }
-    // ======================================================================
-    // Canvas identity
-    // ======================================================================
-    // Tighten the return type from `Base`'s `CanvasLike | null`. Covariant
-    // narrowing — TS allows this on override because `Canvas` is a
-    // `CanvasLike`.
-    getCanvas() {
-      return this;
+    getTarget() {
+      return this._target;
     }
-    // Top-level redraw latch. GWEN walks up to the canvas; the canvas's
-    // implementation just sets a flag rather than recursing.
-    redraw() {
-      this._needsRedraw = true;
+    setDoMove(b) {
+      this._doMove = b;
     }
-    isRedrawNeeded() {
-      return this._needsRedraw;
+    isDepressed() {
+      return this._depressed;
     }
-    // ======================================================================
-    // Scale + background
-    // ======================================================================
-    setScale(s) {
-      if (this._scale === s) return;
-      this._scale = s;
-      this.renderer.setScale(s);
-      this.redraw();
-    }
-    getScale() {
-      return this._scale;
-    }
-    setDrawBackground(b) {
-      this._drawBackground = b;
-    }
-    setBackgroundColor(c) {
-      this._backgroundColor = { r: c.r, g: c.g, b: c.b, a: c.a };
-    }
-    // ======================================================================
-    // Cursor
-    // ======================================================================
-    // Base calls `canvas.setCursor(_cursor)` inside `updateCursor`. We map
-    // GWEN's CursorType onto a CSS keyword and only touch `style.cursor`
-    // when the value actually changes.
-    setCursor(c) {
-      if (this._lastAppliedCursor === c) return;
-      this._lastAppliedCursor = c;
-      this.htmlCanvas.style.cursor = cursorToCss(c);
-    }
-    // ======================================================================
-    // Bounds
-    // ======================================================================
-    // When the canvas itself resizes, every child needs a fresh layout
-    // pass. Base's `onBoundsChanged` would only invalidate when w/h
-    // changed; at the canvas level even a pure translation is rare, so
-    // always invalidate.
-    onBoundsChanged(old) {
-      super.onBoundsChanged(old);
-      this.invalidate();
-      this.invalidateChildren(true);
-      this.redraw();
-    }
-    // ======================================================================
-    // Per-frame lifecycle
-    // ======================================================================
-    // doThink — called once per frame by the host, before `renderCanvas`.
-    // Matches Canvas.cpp:99 (`DoThink`).
-    doThink() {
-      this.processDelayedDeletes();
-      if (this.hidden()) return;
-      this.firstTab = null;
-      this.nextTab = null;
-      this.tabList = [];
-      this.processDelayedDeletes();
-      this.recurseLayout(this.skin);
-      if (this.nextTab == null) this.nextTab = this.firstTab;
-      if (this.mouseFocus && !this.mouseFocus.isVisible()) {
-        this.mouseFocus = null;
-      }
-      if (this.keyboardFocus && (!this.keyboardFocus.isVisible() || !this.keyboardFocus.getKeyboardInputEnabled())) {
-        this.keyboardFocus = null;
-      }
-      if (this.keyboardFocus) {
-        const now = nowSec();
-        for (let i = 0; i < Key.Count; i++) {
-          if (this.keyState[i] && this.keyRepeatTarget !== this.keyboardFocus) {
-            this.keyState[i] = false;
-            continue;
-          }
-          if (this.keyState[i] && now > this.keyNextRepeat[i]) {
-            this.keyNextRepeat[i] = now + KEY_REPEAT_RATE;
-            this.keyboardFocus.onKeyPress(i, true);
-          }
-        }
-      }
-      this.updateHoveredControl();
-    }
-    // renderCanvas — runs the full render pass. Callers should check
-    // `isRedrawNeeded()` first if they want to elide unchanged frames.
-    renderCanvas() {
-      if (!this._needsRedraw) return;
-      this._needsRedraw = false;
-      const r = this.renderer;
-      r.begin();
-      this.recurseLayout(this.skin);
-      r.setClipRegion(this.getRenderBounds());
-      r.setRenderOffset(point(-this.x(), -this.y()));
-      r.setScale(this._scale);
-      if (this._drawBackground) {
-        r.setDrawColor(this._backgroundColor);
-        r.drawFilledRect(this.getRenderBounds());
-      }
-      this.doRender(this.skin);
-      this.renderToolTip();
-      this.renderDragPreview();
-      r.end();
-    }
-    // Tooltip overlay — drawn last so it floats above every other control.
-    // Triggered by `hoveredControl` having a `_toolTip` child that wasn't
-    // suppressed by a setToolTipControl(null). Uses a Label-backed tooltip
-    // when available (set via Label.setToolTip); falls back to rendering
-    // the placeholder Base's `name` as plain text.
-    renderToolTip() {
-      const hovered = this.hoveredControl;
-      if (!hovered || hovered === this) return;
-      const tip = hovered.getToolTip();
-      if (!tip) return;
-      const pad = 12;
-      let tw = tip.width();
-      let th = tip.height();
-      if (tw <= 0 || th <= 0) {
-        const text = tip.getName();
-        if (!text) return;
-        const size = this.skin.renderer.measureText(this.skin.getDefaultFont(), text);
-        tw = size.x + 10;
-        th = size.y + 6;
-      }
-      let tx = this.mousePosition.x + pad;
-      let ty = this.mousePosition.y + pad + 8;
-      if (tx + tw > this.width()) tx = this.width() - tw - 2;
-      if (ty + th > this.height()) ty = this.mousePosition.y - th - 4;
-      if (tx < 2) tx = 2;
-      if (ty < 2) ty = 2;
-      tip.setPos(tx, ty);
-      const wasHidden = tip.hidden();
-      tip.setHidden(false);
-      const renderer = this.skin.renderer;
-      const savedOffset = renderer.getRenderOffset();
-      renderer.setRenderOffset(point(savedOffset.x + tx, savedOffset.y + ty));
-      this.skin.drawToolTip(tip);
-      renderer.setRenderOffset(savedOffset);
-      tip.doRender(this.skin);
-      tip.setHidden(wasHidden);
-    }
-    // Drag preview — renders the dragged source at the pointer offset
-    // recorded when the drag started (`p.holdoffset`). Provides visual
-    // feedback that mirrors what GWEN's DragAndDrop manager draws.
-    renderDragPreview() {
-      if (!this.dragStarted || !this.dragPackage) return;
-      const dc = this.dragPackage.drawcontrol;
-      if (!dc) return;
-      const ho = this.dragPackage.holdoffset;
-      const renderer = this.skin.renderer;
-      const w = dc.width();
-      const h = dc.height();
-      if (w <= 0 || h <= 0) return;
-      const oldOffset = renderer.getRenderOffset();
-      const targetX = this.mousePosition.x - ho.x;
-      const targetY = this.mousePosition.y - ho.y;
-      renderer.setRenderOffset(point(targetX - dc.x(), targetY - dc.y()));
-      dc.doRender(this.skin);
-      renderer.setRenderOffset(oldOffset);
-    }
-    // ======================================================================
-    // Hover
-    // ======================================================================
-    updateHoveredControl() {
-      if (this.dragStarted) return;
-      const mx = this.mousePosition.x;
-      const my = this.mousePosition.y;
-      let candidate = null;
-      const raw = this.getControlAt(mx - this.x(), my - this.y());
-      if (raw && raw !== this) candidate = raw;
-      if (candidate !== this.hoveredControl) {
-        const old = this.hoveredControl;
-        this.hoveredControl = null;
-        if (old) old.onMouseLeave();
-        this.hoveredControl = candidate;
-        if (candidate) candidate.onMouseEnter();
-      }
-      if (this.mouseFocus && this.mouseFocus.getCanvas() === this) {
-        this.hoveredControl = this.mouseFocus;
-      }
-    }
-    // ======================================================================
-    // Focus helpers
-    // ======================================================================
-    // Climb from `start` to find the first ancestor that wants keyboard
-    // input. Matches Canvas.cpp:InputMouseButton behaviour.
-    findKeyboardFocus(start) {
-      let node = start;
-      while (node) {
-        if (node.getKeyboardInputEnabled()) {
-          node.focus();
-          return node;
-        }
-        node = node.parent;
-      }
-      if (this.keyboardFocus) this.keyboardFocus.blur();
-      return null;
-    }
-    // ======================================================================
-    // Delayed delete
-    // ======================================================================
-    addDelayedDelete(ctrl) {
-      if (this._delayedDelete.has(ctrl)) return;
-      this._delayedDelete.add(ctrl);
-      this._delayedDeleteList.push(ctrl);
-    }
-    // Called from Base.dispose via CanvasLike so we can forget a control
-    // that's going away right now. Without this, `processDelayedDeletes`
-    // would call `dispose()` on something already disposed.
-    preDeleteCanvas(ctrl) {
-      if (this._delayedDelete.has(ctrl)) {
-        this._delayedDelete.delete(ctrl);
-        const i = this._delayedDeleteList.indexOf(ctrl);
-        if (i !== -1) this._delayedDeleteList.splice(i, 1);
-      }
-      if (this.hoveredControl === ctrl) this.hoveredControl = null;
-      if (this.keyboardFocus === ctrl) this.keyboardFocus = null;
-      if (this.mouseFocus === ctrl) this.mouseFocus = null;
-    }
-    processDelayedDeletes() {
-      if (this._delayedDeleteList.length === 0) return;
-      const snapshot = this._delayedDeleteList.slice();
-      this._delayedDelete.clear();
-      this._delayedDeleteList.length = 0;
-      for (let i = 0; i < snapshot.length; i++) {
-        snapshot[i].dispose();
-      }
-      this.redraw();
-    }
-    // Convenience for host code that wants to nuke every child in one
-    // call without tearing down the Canvas itself.
-    releaseChildren() {
-      const kids = this.children.slice();
-      for (let i = 0; i < kids.length; i++) {
-        kids[i].dispose();
-      }
-    }
-    // ======================================================================
-    // Dispose
-    // ======================================================================
-    dispose() {
-      if (this._detachInput) {
-        this._detachInput();
-        this._detachInput = null;
-      }
-      this.releaseChildren();
-      super.dispose();
-    }
-    // ======================================================================
-    // InputTarget — raw input from core/Input.ts
-    // ======================================================================
-    inputMouseMoved(x, y, dx, dy) {
-      if (this.hidden()) return false;
-      this.mousePosition = point(x, y);
-      if (this.dragCandidate && !this.dragStarted) {
-        const ddx = x - this.dragStartPos.x;
-        const ddy = y - this.dragStartPos.y;
-        if (ddx * ddx + ddy * ddy >= DRAG_START_THRESHOLD * DRAG_START_THRESHOLD) {
-          this.beginDrag(x, y);
-        }
-      }
-      if (this.dragStarted) {
-        this.updateDragHover(x, y);
-        this.redraw();
-        return true;
-      }
-      this.updateHoveredControl();
-      const hovered = this.hoveredControl;
-      if (!hovered || hovered === this) return false;
-      hovered.onMouseMoved(x, y, dx, dy);
-      hovered.updateCursor();
-      return true;
-    }
-    // Drag-and-drop dispatch helpers.
-    beginDrag(x, y) {
-      if (!this.dragCandidate) return;
-      const pkg = this.dragCandidate.dragAndDrop_GetPackage(x, y);
-      if (!pkg || !pkg.draggable) {
-        this.dragCandidate = null;
-        return;
-      }
-      if (!this.dragCandidate.dragAndDrop_StartDragging(pkg, x, y)) {
-        this.dragCandidate = null;
-        return;
-      }
-      this.dragPackage = pkg;
-      this.dragStarted = true;
-      if (this.hoveredControl && this.hoveredControl !== this) {
-        const old = this.hoveredControl;
-        this.hoveredControl = null;
-        old.onMouseLeave();
-      }
-      const dc = pkg.drawcontrol;
-      if (dc) {
-        const target = pkg.name === "TabWindowMove" && dc.parent ? dc.parent : dc;
-        this.dragHiddenSource = target;
-        this.dragHiddenSourceWasHidden = target.hidden();
-        target.setHidden(true);
-      }
-    }
-    updateDragHover(x, y) {
-      if (!this.dragPackage) return;
-      const raw = this.getControlAt(x - this.x(), y - this.y());
-      let target = raw === this ? null : raw;
-      while (target) {
-        if (target !== this.dragCandidate && target.dragAndDrop_CanAcceptPackage(this.dragPackage)) {
-          break;
-        }
-        target = target.parent;
-      }
-      if (target !== this.dragHoverTarget) {
-        if (this.dragHoverTarget) this.dragHoverTarget.dragAndDrop_HoverLeave(this.dragPackage);
-        this.dragHoverTarget = target;
-        if (target) target.dragAndDrop_HoverEnter(this.dragPackage, x, y);
-      }
-      if (target) target.dragAndDrop_Hover(this.dragPackage, x, y);
-    }
-    endDrag(x, y) {
-      if (!this.dragStarted || !this.dragCandidate || !this.dragPackage) {
-        this.dragCandidate = null;
-        this.dragPackage = null;
-        this.dragStarted = false;
-        this.dragHoverTarget = null;
-        this.restoreDragHiddenSource(false, "");
-        return;
-      }
-      let success = false;
-      if (this.dragHoverTarget) {
-        success = this.dragHoverTarget.dragAndDrop_HandleDrop(this.dragPackage, x, y);
-        this.dragHoverTarget.dragAndDrop_HoverLeave(this.dragPackage);
-      }
-      this.dragCandidate.dragAndDrop_EndDragging(success, x, y);
-      this.restoreDragHiddenSource(success, this.dragPackage.name);
-      this.dragCandidate = null;
-      this.dragPackage = null;
-      this.dragStarted = false;
-      this.dragHoverTarget = null;
-    }
-    // Reverse the `setHidden(true)` from `beginDrag`. For a TabWindowMove
-    // we only leave the source DockBase hidden if the drop emptied it
-    // (consolidation already hid it on the way out — restoring would
-    // put an empty bordered dock back on screen). A SAME-source drop
-    // (re-docking the same dock onto its own edge to claim corner
-    // priority) reaches HandleDrop's "skip the move" branch — the dock
-    // still has all its tabs, so we restore visibility. Cancelled
-    // drags, single-tab moves, and non-dock drags all also restore.
-    restoreDragHiddenSource(success, packageName) {
-      const target = this.dragHiddenSource;
-      if (!target) return;
-      this.dragHiddenSource = null;
-      let leaveHidden = false;
-      if (success && packageName === "TabWindowMove") {
-        const maybeDock = target;
-        leaveHidden = typeof maybeDock.isEmpty === "function" && maybeDock.isEmpty();
-      }
-      if (!leaveHidden) {
-        target.setHidden(this.dragHiddenSourceWasHidden);
-      }
-    }
-    inputMouseButton(button, pressed) {
-      if (this.hidden()) return false;
-      if (button === 0 && !pressed && this.dragStarted) {
-        this.leftMouseDown = false;
-        this.endDrag(this.mousePosition.x, this.mousePosition.y);
-        return true;
-      }
-      const hovered = this.hoveredControl;
-      if (pressed && (!hovered || !hovered.isMenuComponent() && !hovered.ownsOpenMenu())) {
-        this.closeMenus();
-      }
-      if (!hovered || !hovered.isVisible() || hovered === this) return false;
-      if (button >= MAX_MOUSE_BUTTONS) return false;
-      if (button === 0) this.leftMouseDown = pressed;
-      else if (button === 2) this.rightMouseDown = pressed;
-      const now = nowSec();
-      const isDouble = pressed && this.lastClickPos.x === this.mousePosition.x && this.lastClickPos.y === this.mousePosition.y && now - this.lastClickTime[button] < DOUBLE_CLICK_SPEED;
-      if (pressed && !isDouble) {
-        this.lastClickTime[button] = now;
-        this.lastClickPos = { x: this.mousePosition.x, y: this.mousePosition.y };
-      }
+    // =====================================================================
+    // Mouse
+    // =====================================================================
+    onMouseClickLeft(x, y, pressed) {
+      if (this.isDisabled()) return;
       if (pressed) {
-        if (!hovered.isMenuComponent() && !hovered.ownsOpenMenu()) {
-          this.findKeyboardFocus(hovered);
+        const canvas2 = this.getCanvas();
+        if (canvas2) canvas2.mouseFocus = this;
+        this._depressed = true;
+        if (this._target) {
+          const p = this._target.canvasPosToLocal(point(x, y));
+          this._holdPos.x = p.x;
+          this._holdPos.y = p.y;
         }
+        const info2 = eventInfo();
+        info2.controlCaller = this;
+        this.onDragStart.emit(info2);
+        return;
       }
-      if (button === 0) {
-        if (pressed) {
-          let scan = hovered;
-          while (scan && !scan.dragAndDrop_Draggable()) scan = scan.parent;
-          if (scan) {
-            this.dragCandidate = scan;
-            this.dragStartPos = { x: this.mousePosition.x, y: this.mousePosition.y };
-            this.dragStarted = false;
-          }
-        } else {
-          if (this.dragStarted) {
-            this.endDrag(this.mousePosition.x, this.mousePosition.y);
-          } else {
-            this.dragCandidate = null;
-          }
+      this._depressed = false;
+      const canvas = this.getCanvas();
+      if (canvas) canvas.mouseFocus = null;
+      const info = eventInfo();
+      info.controlCaller = this;
+      this.onDragEnd.emit(info);
+    }
+    onMouseMoved(x, y, dx, dy) {
+      if (this.isDisabled()) return;
+      if (!this._depressed) return;
+      if (this._doMove && this._target) {
+        let nx = x - this._holdPos.x;
+        let ny = y - this._holdPos.y;
+        const parent = this._target.parent;
+        if (parent) {
+          const local = parent.canvasPosToLocal(point(nx, ny));
+          nx = local.x;
+          ny = local.y;
         }
+        this._target.moveTo(nx, ny);
       }
-      hovered.updateCursor();
-      if (pressed) hovered.touch();
-      const mx = this.mousePosition.x;
-      const my = this.mousePosition.y;
-      switch (button) {
-        case 0:
-          if (pressed && isDouble) {
-            hovered.onMouseDoubleClickLeft(mx, my);
-          } else {
-            hovered.onMouseClickLeft(mx, my, pressed);
-          }
-          break;
-        case 2:
-          if (pressed && isDouble) {
-            hovered.onMouseDoubleClickRight(mx, my);
-          } else {
-            hovered.onMouseClickRight(mx, my, pressed);
-          }
-          break;
-        default:
-          break;
+      const info = eventInfo();
+      info.controlCaller = this;
+      info.point = point(dx, dy);
+      this.onDragged.emit(info);
+    }
+    onMouseDoubleClickLeft(_x, _y) {
+      const info = eventInfo();
+      info.controlCaller = this;
+      this.onDoubleClickLeft.emit(info);
+    }
+    // =====================================================================
+    // Render — intentionally empty. Dragger is a pure interaction control;
+    // subclasses (Window title bar, ResizerControl) supply the art.
+    // =====================================================================
+    render(_skin) {
+    }
+  };
+
+  // src/controls/ScrollBarBar.ts
+  var ScrollBarBar = class extends Dragger {
+    constructor(parent) {
+      super(parent);
+      this._horizontal = true;
+      this.setTarget(this);
+      this.setRestrictToParent(true);
+    }
+    setHorizontal(b) {
+      this._horizontal = b;
+    }
+    isHorizontal() {
+      return this._horizontal;
+    }
+    // Track area excludes the parent ScrollBar's two scroll buttons. For a
+    // vertical bar the buttons are square w×w sitting at the top and
+    // bottom; for a horizontal bar they're h×h at the left and right.
+    moveTo(x, y) {
+      const parent = this.parent;
+      if (!parent) {
+        super.moveTo(x, y);
+        return;
       }
-      return true;
-    }
-    inputMouseWheel(val) {
-      if (this.hidden()) return false;
-      const hovered = this.hoveredControl;
-      if (!hovered || hovered.getCanvas() !== this) return false;
-      hovered.onMouseWheeled(val);
-      return true;
-    }
-    inputKey(key, pressed) {
-      if (this.hidden()) return false;
-      if (key <= Key.Invalid || key >= Key.Count) return false;
-      const target = this.keyboardFocus && this.keyboardFocus.isVisible() && this.keyboardFocus.getCanvas() === this ? this.keyboardFocus : null;
-      let consumed = false;
-      if (pressed && !this.keyState[key]) {
-        this.keyState[key] = true;
-        this.keyNextRepeat[key] = nowSec() + KEY_REPEAT_DELAY;
-        this.keyRepeatTarget = target;
-        if (target) consumed = target.onKeyPress(key, true);
-      } else if (!pressed && this.keyState[key]) {
-        this.keyState[key] = false;
-        if (target) consumed = target.onKeyRelease(key);
+      if (this._horizontal) {
+        const bs = parent.height();
+        const minX = bs;
+        const maxX = parent.width() - bs - this.width();
+        if (x < minX) x = minX;
+        if (x > maxX) x = maxX;
+        super.moveTo(x, this.y());
+      } else {
+        const bs = parent.width();
+        const minY = bs;
+        const maxY = parent.height() - bs - this.height();
+        if (y < minY) y = minY;
+        if (y > maxY) y = maxY;
+        super.moveTo(this.x(), y);
       }
-      if (target && key === Key.Tab) consumed = true;
-      return consumed;
     }
-    inputCharacter(ch) {
-      if (this.hidden()) return false;
-      const cp = ch.codePointAt(0);
-      if (cp === void 0 || cp < 32) return false;
-      const target = this.keyboardFocus;
-      if (!target || !target.isVisible() || target.getCanvas() !== this || this.isControlDown()) {
-        return false;
-      }
-      target.onChar(ch);
-      return true;
-    }
-    // Walk the visible control tree for a control with a matching
-    // accelerator binding (added via `Base.addAccelerator`). First match
-    // wins — typically a MenuItem whose `setAccelerator(text)` registered
-    // the binding. The standard clipboard / select-all shortcuts route
-    // straight to a text-input keyboard-focus target before the tree
-    // walk so a focused TextBox eats Ctrl+C/X/V/A even when a menu item
-    // also bound those keys.
-    inputAccelerator(text) {
-      if (this.hidden()) return false;
-      const focus = this.keyboardFocus;
-      if (focus && focus.isVisible() && focus.needsInputChars()) {
-        switch (text) {
-          case "Ctrl+C":
-            focus.onCopy();
-            return true;
-          case "Ctrl+X":
-            focus.onCut();
-            return true;
-          case "Ctrl+V":
-            focus.onPaste();
-            return true;
-          case "Ctrl+A":
-            focus.onSelectAll();
-            return true;
-        }
-      }
-      return this.handleAccelerator(text);
-    }
-    // ======================================================================
-    // Modifier queries
-    // ======================================================================
-    isKeyDown(key) {
-      if (key < 0 || key >= Key.Count) return false;
-      return this.keyState[key];
-    }
-    isControlDown() {
-      return this.keyState[Key.Control] || this.keyState[Key.Command];
-    }
-    isShiftDown() {
-      return this.keyState[Key.Shift];
-    }
-    isAltDown() {
-      return this.keyState[Key.Alt];
+    render(skin) {
+      skin.drawScrollBarBar(this, this._depressed, this.isHovered(), this._horizontal);
     }
   };
 
@@ -6012,112 +5588,6 @@ void main() {
     }
   };
 
-  // src/controls/Rectangle.ts
-  var Rectangle = class extends Base {
-    constructor() {
-      super(...arguments);
-      this._color = color(255, 255, 255, 255);
-    }
-    getColor() {
-      return this._color;
-    }
-    setColor(c) {
-      this._color = { r: c.r, g: c.g, b: c.b, a: c.a };
-      this.redraw();
-    }
-    render(skin) {
-      skin.renderer.setDrawColor(this._color);
-      skin.renderer.drawFilledRect(this.getRenderBounds());
-    }
-  };
-
-  // src/controls/Dragger.ts
-  var Dragger = class extends Base {
-    constructor(parent) {
-      super(parent);
-      this.onDragStart = new Signal();
-      this.onDragged = new Signal();
-      this.onDragEnd = new Signal();
-      this.onDoubleClickLeft = new Signal();
-      this._target = null;
-      this._doMove = true;
-      this._depressed = false;
-      this._holdPos = point();
-      this.setMouseInputEnabled(true);
-    }
-    // =====================================================================
-    // Config
-    // =====================================================================
-    setTarget(t) {
-      this._target = t;
-    }
-    getTarget() {
-      return this._target;
-    }
-    setDoMove(b) {
-      this._doMove = b;
-    }
-    isDepressed() {
-      return this._depressed;
-    }
-    // =====================================================================
-    // Mouse
-    // =====================================================================
-    onMouseClickLeft(x, y, pressed) {
-      if (this.isDisabled()) return;
-      if (pressed) {
-        const canvas2 = this.getCanvas();
-        if (canvas2) canvas2.mouseFocus = this;
-        this._depressed = true;
-        if (this._target) {
-          const p = this._target.canvasPosToLocal(point(x, y));
-          this._holdPos.x = p.x;
-          this._holdPos.y = p.y;
-        }
-        const info2 = eventInfo();
-        info2.controlCaller = this;
-        this.onDragStart.emit(info2);
-        return;
-      }
-      this._depressed = false;
-      const canvas = this.getCanvas();
-      if (canvas) canvas.mouseFocus = null;
-      const info = eventInfo();
-      info.controlCaller = this;
-      this.onDragEnd.emit(info);
-    }
-    onMouseMoved(x, y, dx, dy) {
-      if (this.isDisabled()) return;
-      if (!this._depressed) return;
-      if (this._doMove && this._target) {
-        let nx = x - this._holdPos.x;
-        let ny = y - this._holdPos.y;
-        const parent = this._target.parent;
-        if (parent) {
-          const local = parent.canvasPosToLocal(point(nx, ny));
-          nx = local.x;
-          ny = local.y;
-        }
-        this._target.moveTo(nx, ny);
-      }
-      const info = eventInfo();
-      info.controlCaller = this;
-      info.point = point(dx, dy);
-      this.onDragged.emit(info);
-    }
-    onMouseDoubleClickLeft(_x, _y) {
-      const info = eventInfo();
-      info.controlCaller = this;
-      this.onDoubleClickLeft.emit(info);
-    }
-    // =====================================================================
-    // Render — intentionally empty. Dragger is a pure interaction control;
-    // subclasses (Window title bar, ResizerControl) supply the art.
-    // =====================================================================
-    render(_skin) {
-    }
-  };
-
   // src/controls/Button.ts
   var Button = class extends Label {
     constructor(parent) {
@@ -6307,6 +5777,1466 @@ void main() {
     setImageColor(c) {
       if (!this._image) return;
       this._image.setDrawColor(c);
+    }
+  };
+
+  // src/controls/ScrollBarButton.ts
+  var ScrollBarButton = class extends Button {
+    constructor(parent) {
+      super(parent);
+      this._direction = Pos.Top;
+    }
+    setDirection(d) {
+      this._direction = d;
+    }
+    getDirection() {
+      return this._direction;
+    }
+    render(skin) {
+      skin.drawScrollButton(this, this._direction, this.isDepressed(), this.isHovered(), this.isDisabled());
+    }
+  };
+
+  // src/controls/ScrollBar.ts
+  var BaseScrollBar = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this.onBarMoved = new Signal();
+      // Track-area press state — held while a page-nudge click is in progress.
+      this._depressed = false;
+      this._contentSize = 0;
+      this._viewableContentSize = 0;
+      this._nudgeAmount = 20;
+      // Normalized 0..1 scroll position.
+      this._scrolledAmount = 0;
+      this.setBounds(0, 0, 15, 15);
+      this._scrollButtons = [new ScrollBarButton(this), new ScrollBarButton(this)];
+      this._bar = new ScrollBarBar(this);
+      this._bar.onDragged.on(() => {
+        this.recomputeFromBarPosition();
+        this.barMovedNotification();
+      });
+    }
+    // =====================================================================
+    // Config
+    // =====================================================================
+    setContentSize(s) {
+      if (this._contentSize === s) return;
+      this._contentSize = s;
+      this.invalidate();
+    }
+    setViewableContentSize(s) {
+      if (this._viewableContentSize === s) return;
+      this._viewableContentSize = s;
+      this.invalidate();
+    }
+    getContentSize() {
+      return this._contentSize;
+    }
+    getViewableContentSize() {
+      return this._viewableContentSize;
+    }
+    setNudgeAmount(n) {
+      this._nudgeAmount = n;
+    }
+    getScrolledAmount() {
+      return this._scrolledAmount;
+    }
+    // Matches `BaseScrollBar::GetNudgeAmount` — track-click nudges by one
+    // page (viewable/content); button nudges by the fixed nudge pixel
+    // count expressed as a fraction of the content size.
+    getNudgeAmount() {
+      const denom = this._contentSize <= 0 ? 1 : this._contentSize;
+      if (this._depressed) return this._viewableContentSize / denom;
+      return this._nudgeAmount / denom;
+    }
+    setScrolledAmount(amount, forceUpdate) {
+      if (amount < 0) amount = 0;
+      else if (amount > 1) amount = 1;
+      if (amount === this._scrolledAmount && !forceUpdate) return false;
+      this._scrolledAmount = amount;
+      this.invalidate();
+      this.barMovedNotification();
+      return true;
+    }
+    barMovedNotification() {
+      const info = eventInfo();
+      info.controlCaller = this;
+      this.onBarMoved.emit(info);
+    }
+  };
+  var HorizontalScrollBar = class extends BaseScrollBar {
+    constructor(parent) {
+      super(parent);
+      this._bar.setHorizontal(true);
+      this._scrollButtons[0].setDirection(Pos.Left);
+      this._scrollButtons[1].setDirection(Pos.Right);
+      this._scrollButtons[0].onPress.on(() => this.scrollToLeft());
+      this._scrollButtons[1].onPress.on(() => this.scrollToRight());
+    }
+    scrollToLeft() {
+      this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
+    }
+    scrollToRight() {
+      this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
+    }
+    layout(skin) {
+      super.layout(skin);
+      const bs = this.height();
+      this._scrollButtons[0].setBounds(0, 0, bs, bs);
+      this._scrollButtons[1].setBounds(this.width() - bs, 0, bs, bs);
+      let barW = 0;
+      if (this._contentSize > 0 && this._viewableContentSize > 0) {
+        barW = Math.max(bs * 0.5, this._viewableContentSize / this._contentSize * (this.width() - bs * 2));
+      }
+      const trackW = this.width() - bs * 2;
+      const travel = trackW - barW;
+      const barX = bs + this._scrolledAmount * Math.max(0, travel);
+      this._bar.setBounds(barX, 0, barW, this.height());
+    }
+    recomputeFromBarPosition() {
+      const bs = this.height();
+      const trackW = this.width() - bs * 2;
+      const travel = trackW - this._bar.width();
+      if (travel <= 0) {
+        this._scrolledAmount = 0;
+        return;
+      }
+      const raw = (this._bar.x() - bs) / travel;
+      this._scrolledAmount = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    }
+    onMouseClickLeft(x, y, pressed) {
+      if (!pressed) {
+        this._depressed = false;
+        const canvas2 = this.getCanvas();
+        if (canvas2 && canvas2.mouseFocus === this) canvas2.mouseFocus = null;
+        return;
+      }
+      this._depressed = true;
+      const canvas = this.getCanvas();
+      if (canvas) canvas.mouseFocus = this;
+      const local = this.canvasPosToLocal(point(x, y));
+      if (local.x < this._bar.x()) {
+        this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
+      } else if (local.x > this._bar.x() + this._bar.width()) {
+        this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
+      }
+    }
+    render(skin) {
+      skin.drawScrollBar(this, true, this._depressed);
+    }
+  };
+  var VerticalScrollBar = class extends BaseScrollBar {
+    constructor(parent) {
+      super(parent);
+      this._bar.setHorizontal(false);
+      this._scrollButtons[0].setDirection(Pos.Top);
+      this._scrollButtons[1].setDirection(Pos.Bottom);
+      this._scrollButtons[0].onPress.on(() => this.scrollToTop());
+      this._scrollButtons[1].onPress.on(() => this.scrollToBottom());
+    }
+    scrollToTop() {
+      this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
+    }
+    scrollToBottom() {
+      this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
+    }
+    layout(skin) {
+      super.layout(skin);
+      const bs = this.width();
+      this._scrollButtons[0].setBounds(0, 0, bs, bs);
+      this._scrollButtons[1].setBounds(0, this.height() - bs, bs, bs);
+      let barH = 0;
+      if (this._contentSize > 0 && this._viewableContentSize > 0) {
+        barH = Math.max(bs * 0.5, this._viewableContentSize / this._contentSize * (this.height() - bs * 2));
+      }
+      const trackH = this.height() - bs * 2;
+      const travel = trackH - barH;
+      const barY = bs + this._scrolledAmount * Math.max(0, travel);
+      this._bar.setBounds(0, barY, this.width(), barH);
+    }
+    recomputeFromBarPosition() {
+      const bs = this.width();
+      const trackH = this.height() - bs * 2;
+      const travel = trackH - this._bar.height();
+      if (travel <= 0) {
+        this._scrolledAmount = 0;
+        return;
+      }
+      const raw = (this._bar.y() - bs) / travel;
+      this._scrolledAmount = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    }
+    onMouseClickLeft(x, y, pressed) {
+      if (!pressed) {
+        this._depressed = false;
+        const canvas2 = this.getCanvas();
+        if (canvas2 && canvas2.mouseFocus === this) canvas2.mouseFocus = null;
+        return;
+      }
+      this._depressed = true;
+      const canvas = this.getCanvas();
+      if (canvas) canvas.mouseFocus = this;
+      const local = this.canvasPosToLocal(point(x, y));
+      if (local.y < this._bar.y()) {
+        this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
+      } else if (local.y > this._bar.y() + this._bar.height()) {
+        this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
+      }
+    }
+    render(skin) {
+      skin.drawScrollBar(this, false, this._depressed);
+    }
+  };
+
+  // src/controls/ScrollControl.ts
+  var ScrollControl = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this._canScrollH = true;
+      this._canScrollV = true;
+      this._autoHideBars = false;
+      this.setMouseInputEnabled(false);
+      this._vBar = new VerticalScrollBar(this);
+      this._vBar.dock(Pos.Right);
+      this._vBar.setWidth(15);
+      this._vBar.onBarMoved.on(() => this.invalidate());
+      this._hBar = new HorizontalScrollBar(this);
+      this._hBar.dock(Pos.Bottom);
+      this._hBar.setHeight(15);
+      this._hBar.onBarMoved.on(() => this.invalidate());
+      const inner = new Base(this);
+      inner.setMargin(margin(5, 5, 5, 5));
+      inner.setMouseInputEnabled(true);
+      inner.sendToBack();
+      this.setInnerPanel(inner);
+    }
+    // =====================================================================
+    // Config
+    // =====================================================================
+    setScroll(h, v) {
+      this._canScrollH = h;
+      this._canScrollV = v;
+      this.invalidate();
+    }
+    canScrollH() {
+      return this._canScrollH;
+    }
+    canScrollV() {
+      return this._canScrollV;
+    }
+    setAutoHideBars(b) {
+      this._autoHideBars = b;
+    }
+    getVerticalScrollBar() {
+      return this._vBar;
+    }
+    getHorizontalScrollBar() {
+      return this._hBar;
+    }
+    // =====================================================================
+    // Scroll-to-edge helpers
+    // =====================================================================
+    scrollToTop() {
+      this._vBar.setScrolledAmount(0, true);
+    }
+    scrollToBottom() {
+      this._vBar.setScrolledAmount(1, true);
+    }
+    scrollToLeft() {
+      this._hBar.setScrolledAmount(0, true);
+    }
+    scrollToRight() {
+      this._hBar.setScrolledAmount(1, true);
+    }
+    clear() {
+      const inner = this.getInnerPanel();
+      if (inner) inner.removeAllChildren();
+      this.invalidate();
+    }
+    // =====================================================================
+    // Scroll-bar update pipeline
+    //
+    // Called from `layout()` each time the tree re-lays out. We compute
+    // content extents from the inner panel's children, feed the bars, and
+    // apply the resulting fractional scroll offset back to the inner panel.
+    // =====================================================================
+    updateScrollBars() {
+      const inner = this.getInnerPanel();
+      if (!inner) return;
+      let contentW = 0;
+      let contentH = 0;
+      for (const c of inner.children) {
+        if (!c.isVisible()) continue;
+        const r = c.x() + c.width();
+        const b = c.y() + c.height();
+        if (r > contentW) contentW = r;
+        if (b > contentH) contentH = b;
+      }
+      const pad = this.getPadding();
+      const baseW = this.width() - pad.left - pad.right;
+      const baseH = this.height() - pad.top - pad.bottom;
+      let vHidden = !this._canScrollV;
+      let hHidden = !this._canScrollH;
+      let viewW = baseW - (vHidden ? 0 : this._vBar.width());
+      let viewH = baseH - (hHidden ? 0 : this._hBar.height());
+      for (let pass = 0; pass < 2; pass++) {
+        const nextVHidden = !this._canScrollV || this._autoHideBars && contentH <= viewH;
+        const nextHHidden = !this._canScrollH || this._autoHideBars && contentW <= viewW;
+        if (nextVHidden === vHidden && nextHHidden === hHidden) break;
+        vHidden = nextVHidden;
+        hHidden = nextHHidden;
+        viewW = baseW - (vHidden ? 0 : this._vBar.width());
+        viewH = baseH - (hHidden ? 0 : this._hBar.height());
+      }
+      this._vBar.setHidden(vHidden);
+      this._hBar.setHidden(hHidden);
+      this._vBar.setContentSize(Math.max(contentH, viewH));
+      this._vBar.setViewableContentSize(viewH);
+      this._hBar.setContentSize(Math.max(contentW, viewW));
+      this._hBar.setViewableContentSize(viewW);
+      const panelW = this._canScrollH ? Math.max(viewW, contentW) : viewW;
+      const panelH = this._canScrollV ? Math.max(viewH, contentH) : viewH;
+      const overflowH = Math.max(0, contentH - viewH);
+      const overflowW = Math.max(0, contentW - viewW);
+      inner.setBounds(
+        pad.left + (this._canScrollH ? -this._hBar.getScrolledAmount() * overflowW : 0),
+        pad.top + (this._canScrollV ? -this._vBar.getScrolledAmount() * overflowH : 0),
+        panelW,
+        panelH
+      );
+    }
+    // =====================================================================
+    // Overrides
+    // =====================================================================
+    layout(skin) {
+      super.layout(skin);
+      this.updateScrollBars();
+    }
+    // postLayout runs AFTER children have laid out, so contentH/contentW
+    // reflect the children's settled bounds. Re-evaluate the bars here too —
+    // on the first frame, layout() sees stale child sizes (e.g. a
+    // CollapsibleCategory's height is 22 until its own postLayout fits it
+    // to its rows). If visibility flips here, invalidate so the next layout
+    // pass re-docks children at the corrected viewport width.
+    postLayout(skin) {
+      super.postLayout(skin);
+      const beforeV = this._vBar.hidden();
+      const beforeH = this._hBar.hidden();
+      this.updateScrollBars();
+      if (this._vBar.hidden() !== beforeV || this._hBar.hidden() !== beforeH) {
+        this.invalidate();
+      }
+    }
+    onMouseWheeled(delta) {
+      if (this._canScrollV && !this._vBar.hidden()) {
+        if (this._vBar.setScrolledAmount(
+          this._vBar.getScrolledAmount() - this._vBar.getNudgeAmount() * (delta / 60),
+          true
+        )) {
+          return true;
+        }
+      }
+      if (this._canScrollH && !this._hBar.hidden()) {
+        if (this._hBar.setScrolledAmount(
+          this._hBar.getScrolledAmount() - this._hBar.getNudgeAmount() * (delta / 60),
+          true
+        )) {
+          return true;
+        }
+      }
+      return super.onMouseWheeled(delta);
+    }
+  };
+
+  // src/controls/MenuItem.ts
+  var RightArrow = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this.setMouseInputEnabled(false);
+    }
+    render(skin) {
+      skin.drawMenuRightArrow(this);
+    }
+  };
+  var MenuItem = class _MenuItem extends Button {
+    constructor(parent) {
+      super(parent);
+      this.onMenuItemSelected = new Signal();
+      this.onChecked = new Signal();
+      this.onUnChecked = new Signal();
+      this.onCheckChange = new Signal();
+      this._menu = null;
+      this._checkable = false;
+      this._checked = false;
+      this._onStrip = false;
+      this._accelerator = null;
+      this._acceleratorText = "";
+      this._submenuArrow = null;
+      this.setHeight(22);
+      this.setShouldDrawBackground(false);
+      this.setTabable(false);
+      this.setAlignment(Pos.CenterV | Pos.Left);
+    }
+    // Includes accelerator + submenu-arrow widths so the host menu's
+    // shrink-wrap can reserve space for the right-aligned controls. Matches
+    // GWEN MenuItem::SizeToContents (MenuItem.cpp:181).
+    sizeToContents() {
+      super.sizeToContents();
+      if (this._accelerator) {
+        this._accelerator.sizeToContents();
+        this.setWidth(this.width() + this._accelerator.width());
+      }
+      if (this._submenuArrow) {
+        this.setWidth(this.width() + this._submenuArrow.width());
+      }
+    }
+    // ComboBox / MenuItem own the menu they pop up. Canvas's outside-click
+    // close-menus walk skips controls that own a visible menu so a click on
+    // the owner reaches its own toggle handler.
+    ownsOpenMenu() {
+      return this._menu !== null && this._menu.isVisible();
+    }
+    // =====================================================================
+    // Checkable state
+    // =====================================================================
+    isCheckable() {
+      return this._checkable;
+    }
+    setCheckable(b) {
+      this._checkable = b;
+    }
+    isChecked() {
+      return this._checked;
+    }
+    setChecked(b) {
+      if (b === this._checked) return;
+      this._checked = b;
+      const info = eventInfo();
+      info.controlCaller = this;
+      this.onCheckChange.emit(info);
+      if (b) this.onChecked.emit(info);
+      else this.onUnChecked.emit(info);
+      this.redraw();
+    }
+    toggleChecked() {
+      this.setChecked(!this._checked);
+    }
+    // =====================================================================
+    // Strip / submenu
+    // =====================================================================
+    setOnStrip(b) {
+      this._onStrip = b;
+    }
+    isOnStrip() {
+      return this._onStrip;
+    }
+    hasMenu() {
+      return this._menu !== null;
+    }
+    // Lazy submenu construction — GWEN creates the Menu on first access so
+    // leaf items don't pay the allocation cost. We parent the submenu to the
+    // canvas so it can float on top of its owning menu's clip region.
+    getMenu() {
+      if (!this._menu) {
+        const canvas = this.getCanvas();
+        this._menu = new Menu(canvas ?? null);
+        this._menu.hide();
+        if (!this._onStrip) {
+          this._submenuArrow = new RightArrow(this);
+          this._submenuArrow.setSize(15, 15);
+          this._submenuArrow.dock(Pos.Right);
+        }
+        this.invalidate();
+      }
+      return this._menu;
+    }
+    isMenuOpen() {
+      return this._menu !== null && this._menu.isVisible();
+    }
+    openMenu() {
+      if (!this._menu) return;
+      if (this._onStrip && this.parent) {
+        for (const sibling of this.parent.children) {
+          if (sibling === this) continue;
+          if (sibling instanceof _MenuItem && sibling.isOnStrip() && sibling.isMenuOpen()) {
+            sibling.closeMenu();
+          }
+        }
+      }
+      this._menu.show();
+      this._menu.bringToFront();
+      const basePos = this.localPosToCanvas({ x: 0, y: 0 });
+      if (this._onStrip) {
+        this._menu.setPos(basePos.x, basePos.y + this.height() + 1);
+      } else {
+        this._menu.setPos(basePos.x + this.width(), basePos.y);
+      }
+    }
+    closeMenu() {
+      if (!this._menu) return;
+      this._menu.close();
+      this._menu.closeAll();
+    }
+    toggleMenu() {
+      if (this.isMenuOpen()) this.closeMenu();
+      else this.openMenu();
+    }
+    // =====================================================================
+    // Accelerator label
+    // =====================================================================
+    setAccelerator(text) {
+      if (this._accelerator) {
+        if (this._acceleratorText) this.removeAccelerator(this._acceleratorText);
+        this._accelerator.dispose();
+        this._accelerator = null;
+        this._acceleratorText = "";
+      }
+      if (!text) return;
+      this._accelerator = new Label(this);
+      this._accelerator.dock(Pos.Right);
+      this._accelerator.setAlignment(Pos.Right | Pos.CenterV);
+      this._accelerator.setMargin(margin(0, 0, 4, 0));
+      this._accelerator.setText(text);
+      this.addAccelerator(text, () => this.acceleratePressed());
+      this._acceleratorText = text;
+    }
+    // Fires the press signal *and* closes any open menus, so a Ctrl+N
+    // shortcut behaves like a click on the item — onPress fires, the
+    // selected event fires, and any menus that were tucking the item
+    // disappear. Overrides Button.acceleratePressed.
+    acceleratePressed() {
+      super.acceleratePressed();
+      this.onPressItem();
+    }
+    // =====================================================================
+    // Mouse — extend Button's left-click with submenu / close-menus logic.
+    // =====================================================================
+    onMouseClickLeft(x, y, pressed) {
+      const wasDepressed = this.isDepressed();
+      super.onMouseClickLeft(x, y, pressed);
+      if (pressed) return;
+      if (!wasDepressed) return;
+      if (!this.isHovered()) return;
+      this.onPressItem();
+    }
+    // Press handler — GWEN spells this `OnPress`; in the TS port we keep
+    // Button's `onPress` signal semantics intact and do the item-specific
+    // work in `onPressItem` invoked from the mouse-up branch above.
+    onPressItem() {
+      if (this.hasMenu()) {
+        this.toggleMenu();
+        return;
+      }
+      if (!this._onStrip) {
+        if (this._checkable) this.toggleChecked();
+        const info = eventInfo();
+        info.controlCaller = this;
+        this.onMenuItemSelected.emit(info);
+        const canvas = this.getCanvas();
+        if (canvas) canvas.closeMenus();
+      }
+    }
+    // =====================================================================
+    // Render
+    // =====================================================================
+    render(skin) {
+      skin.drawMenuItem(this, this.isMenuOpen(), this._checkable && this._checked);
+      if (this._accelerator) {
+        this._accelerator.setTextColorOverride(this.textColor());
+      }
+    }
+  };
+
+  // src/controls/Menu.ts
+  var Menu = class extends ScrollControl {
+    constructor(parent) {
+      super(parent);
+      this.onMenuClosed = new Signal();
+      // Icon gutter is hidden by default — call setShowIconMargin(true) to
+      // reserve a 24px column for menu-item icons. Most menus don't use icons,
+      // so the saved horizontal space tightens the popup.
+      this._disableIconMargin = true;
+      this._deleteOnClose = false;
+      // Floor for sizeToContents; tunable via setMinimumWidth so a
+      // ComboBox can make its popup at least as wide as the combo.
+      this._minimumWidth = 100;
+      this.setBounds(0, 0, 10, 10);
+      this.setPadding(margin(2, 2, 2, 2));
+      this.setDisabled(false);
+      this.setAutoHideBars(true);
+      this.setScroll(false, true);
+      this.hide();
+      this.setKeyboardInputEnabled(false);
+    }
+    // Menus register as menu-components so the canvas's outside-click
+    // close-menus walk leaves clicks-inside-menus alone. Base.isMenuComponent
+    // walks UP the parent chain so descendants (MenuItems, the inner scroll
+    // container) inherit the truthy answer.
+    isMenuComponent() {
+      return true;
+    }
+    // Whether hovering an item in this menu should auto-open its submenu.
+    // Regular menus always do; MenuStrip narrows to "only when the strip
+    // already has another menu open" so the bar isn't twitchy on first
+    // mouse-over.
+    shouldHoverOpenMenu() {
+      return true;
+    }
+    // Hover handler wired by addItem. Fires when the pointer enters a child
+    // MenuItem; we open its submenu (closing siblings first) when the host
+    // menu wants hover-driven opens.
+    onHoverItem(ctrl) {
+      if (!this.shouldHoverOpenMenu()) return;
+      if (!(ctrl instanceof MenuItem)) return;
+      if (ctrl.isMenuOpen()) return;
+      this.closeAll();
+      if (ctrl.hasMenu()) ctrl.openMenu();
+    }
+    // Close-on-outside-click hook called by Canvas. Closes any open submenus
+    // hosted by this menu's items, then hides the menu itself if visible.
+    closeMenus() {
+      super.closeMenus();
+      this.closeAll();
+      if (this.isVisible()) this.close();
+    }
+    // =====================================================================
+    // Configuration
+    // =====================================================================
+    setDisableIconMargin(b) {
+      this._disableIconMargin = b;
+    }
+    // Inverse alias — call setShowIconMargin(true) to reserve a 24px icon
+    // gutter on the left side of every item, false to hide it. Equivalent
+    // to setDisableIconMargin(!b) but reads more naturally at the call site.
+    setShowIconMargin(b) {
+      this._disableIconMargin = !b;
+    }
+    isIconMarginDisabled() {
+      return this._disableIconMargin;
+    }
+    isIconMarginVisible() {
+      return !this._disableIconMargin;
+    }
+    setDeleteOnClose(b) {
+      this._deleteOnClose = b;
+    }
+    shouldDeleteOnClose() {
+      return this._deleteOnClose;
+    }
+    // =====================================================================
+    // Items
+    // =====================================================================
+    addItem(name, icon = "", accelerator = "") {
+      const inner = this.getInnerPanel() ?? this;
+      const item = new MenuItem(inner);
+      item.setPadding(margin(2, 4, 4, 4));
+      item.setText(name);
+      if (icon) item.setImage(icon);
+      if (accelerator) item.setAccelerator(accelerator);
+      item.dock(Pos.Top);
+      item.setTextPadding(margin(this._disableIconMargin ? 0 : 24, 0, 12, 0));
+      item.setAlignment(Pos.CenterV | Pos.Left);
+      item.sizeToContents();
+      item.onHoverEnter.on((e) => this.onHoverItem(e.controlCaller));
+      this.invalidate();
+      return item;
+    }
+    addDivider() {
+      const inner = this.getInnerPanel() ?? this;
+      const d = new MenuDivider(inner);
+      d.dock(Pos.Top);
+      d.setMargin(margin(this._disableIconMargin ? 0 : 24, 0, 4, 0));
+      return d;
+    }
+    clearItems() {
+      const inner = this.getInnerPanel();
+      if (inner) inner.removeAllChildren();
+      this.invalidate();
+    }
+    // =====================================================================
+    // Open / close
+    // =====================================================================
+    open(pos) {
+      this.show();
+      this.bringToFront();
+      const canvas = this.getCanvas();
+      const p = pos ?? canvas?.mousePosition ?? point(0, 0);
+      this.setPos(p.x, p.y);
+    }
+    close() {
+      this.hide();
+      const info = eventInfo();
+      info.controlCaller = this;
+      this.onMenuClosed.emit(info);
+      if (this._deleteOnClose) {
+        const canvas = this.getCanvas();
+        if (canvas && typeof canvas.addDelayedDelete === "function") {
+          canvas.addDelayedDelete(this);
+        }
+      }
+    }
+    // Closes every open submenu reachable through child items (not this
+    // menu itself — matches GWEN Menu::CloseAll, Menu.cpp:100). Hovering a
+    // sibling item inside a popup must NOT hide the popup; only the popup's
+    // own `close()` does that.
+    closeAll() {
+      const inner = this.getInnerPanel();
+      if (!inner) return;
+      for (const c of inner.children) {
+        if (c instanceof MenuItem) c.closeMenu();
+      }
+    }
+    // True when any of this menu's items has its submenu open. Mirrors GWEN
+    // Menu::IsMenuOpen (Menu.cpp:113) — the strip relies on this returning
+    // false when no dropdown is showing, so it can gate hover-driven opens.
+    // The popup-visibility check used to live here but conflated "the popup
+    // is showing" with "a child submenu is open" — wrong for the strip,
+    // which is permanently visible.
+    isMenuOpen() {
+      const inner = this.getInnerPanel();
+      if (!inner) return false;
+      for (const c of inner.children) {
+        if (c instanceof MenuItem && c.isMenuOpen()) return true;
+      }
+      return false;
+    }
+    // =====================================================================
+    // Render
+    // =====================================================================
+    render(skin) {
+      skin.drawMenu(this, this._disableIconMargin);
+    }
+    renderUnder(skin) {
+      super.renderUnder(skin);
+      skin.drawShadow(this);
+    }
+    // =====================================================================
+    // Layout — match upstream by shrink-wrapping height to child sum,
+    // clamped to the canvas bottom so long menus don't spill off-screen.
+    // =====================================================================
+    layout(skin) {
+      this.sizeToContents();
+      const inner = this.getInnerPanel();
+      if (inner) {
+        let h = 0;
+        for (const c of inner.children) {
+          if (!c.isVisible()) continue;
+          h += c.height();
+        }
+        const canvas = this.getCanvas();
+        if (canvas && this.y() + h > canvas.height()) {
+          h = canvas.height() - this.y();
+        }
+        const pad = this.getPadding();
+        this.setSize(this.width(), h + pad.top + pad.bottom);
+      }
+      super.layout(skin);
+    }
+    // GWEN's Menu::Layout walks items once to call each item's SizeToContents
+    // and then picks the widest; LayoutSizeToContents (an auxiliary method)
+    // does the menu-wide width pass. We fold both into one method — called
+    // from layout above — so the visible width always tracks the longest
+    // item's natural width. Minimum width of 100 matches upstream feel.
+    //
+    // ScrollControl.updateScrollBars sets the inner panel to the menu's full
+    // viewport width (no vbar gutter when bars auto-hide and content fits),
+    // so docked items end up exactly menu.width wide. Adding the menu's own
+    // padding here is the only overhead the items don't already account for.
+    sizeToContents() {
+      const inner = this.getInnerPanel();
+      if (!inner) return;
+      let maxW = this._minimumWidth;
+      for (const c of inner.children) {
+        if (!c.isVisible()) continue;
+        if (typeof c.sizeToContents === "function") {
+          c.sizeToContents();
+        }
+        const w = c.width();
+        if (w > maxW) maxW = w;
+      }
+      const pad = this.getPadding();
+      const total = maxW + pad.left + pad.right;
+      if (total !== this.width()) {
+        this.setWidth(total);
+      }
+    }
+    // Floor for sizeToContents — the menu can grow wider than this when
+    // an item demands more space, but it won't shrink below it. ComboBox
+    // sets this to its own width before opening the popup so the menu
+    // is always at least as wide as the combo (matching the OS-native
+    // behaviour); sub-menus and free-standing menus keep the default
+    // 100px floor.
+    setMinimumWidth(w) {
+      this._minimumWidth = Math.max(0, w);
+      this.invalidate();
+    }
+    getMinimumWidth() {
+      return this._minimumWidth;
+    }
+  };
+  var MenuDivider = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this.setHeight(1);
+    }
+    render(skin) {
+      skin.drawMenuDivider(this);
+    }
+  };
+
+  // src/controls/Canvas.ts
+  var DOUBLE_CLICK_SPEED = 0.5;
+  var KEY_REPEAT_RATE = 0.03;
+  var KEY_REPEAT_DELAY = 0.3;
+  var MAX_MOUSE_BUTTONS = 5;
+  var DRAG_START_THRESHOLD = 5;
+  function nowSec() {
+    return performance.now() / 1e3;
+  }
+  function cursorToCss(c) {
+    switch (c) {
+      case CursorType.Beam:
+        return "text";
+      case CursorType.SizeNS:
+        return "ns-resize";
+      case CursorType.SizeWE:
+        return "ew-resize";
+      case CursorType.SizeNWSE:
+        return "nwse-resize";
+      case CursorType.SizeNESW:
+        return "nesw-resize";
+      case CursorType.SizeAll:
+        return "move";
+      case CursorType.No:
+        return "not-allowed";
+      case CursorType.Wait:
+        return "wait";
+      case CursorType.Finger:
+        return "pointer";
+      case CursorType.Normal:
+      default:
+        return "default";
+    }
+  }
+  var Canvas = class extends Base {
+    constructor(skin, htmlCanvas) {
+      super(null);
+      this.isCanvas = true;
+      // --- Canvas-wide input state (was file-statics in GWEN) ---
+      this.hoveredControl = null;
+      this.keyboardFocus = null;
+      this.mouseFocus = null;
+      this.firstTab = null;
+      this.nextTab = null;
+      // Full ordered list of tabable controls under this canvas, rebuilt
+      // every frame in `recurseLayout`. Used by `Base.onKeyTab` to walk
+      // both forward (Tab) and backward (Shift+Tab); `firstTab`/`nextTab`
+      // are kept for back-compat with anything that still reads them.
+      this.tabList = [];
+      // Drag-and-drop dispatch state. `dragCandidate` is set on left-button
+      // press over a draggable control; `dragStarted` flips once the pointer
+      // has moved past `DRAG_START_THRESHOLD` so a stationary click never
+      // triggers a drag. `dragHoverTarget` is the deepest acceptor under the
+      // pointer during an active drag. Cleared on release.
+      this.dragCandidate = null;
+      this.dragPackage = null;
+      // Tracks the control we hid in `beginDrag` so the layout reflows around
+      // it. Restored by `endDrag` (see `restoreDragHiddenSource`).
+      this.dragHiddenSource = null;
+      this.dragHiddenSourceWasHidden = false;
+      this.dragStartPos = point(0, 0);
+      this.dragStarted = false;
+      this.dragHoverTarget = null;
+      this.mousePosition = point(0, 0);
+      this.keyRepeatTarget = null;
+      this.leftMouseDown = false;
+      this.rightMouseDown = false;
+      this.lastClickPos = point(0, 0);
+      // --- Canvas-specific state ---
+      this._drawBackground = false;
+      this._backgroundColor = color(255, 255, 255, 255);
+      this._needsRedraw = true;
+      this._scale = 1;
+      this._delayedDelete = /* @__PURE__ */ new Set();
+      this._delayedDeleteList = [];
+      this._detachInput = null;
+      // Track last applied CSS cursor so we don't thrash `style.cursor` on
+      // every pointer-move. Browsers throttle these writes internally but the
+      // equality check is basically free.
+      this._lastAppliedCursor = -1;
+      this.skin = skin;
+      this.renderer = skin.renderer;
+      this.htmlCanvas = htmlCanvas;
+      this.setSkin(skin);
+      this.keyState = new Array(Key.Count).fill(false);
+      this.keyNextRepeat = new Array(Key.Count).fill(0);
+      this.lastClickTime = new Array(MAX_MOUSE_BUTTONS).fill(-1);
+      this._detachInput = attachInput(htmlCanvas, this);
+    }
+    // ======================================================================
+    // Canvas identity
+    // ======================================================================
+    // Tighten the return type from `Base`'s `CanvasLike | null`. Covariant
+    // narrowing — TS allows this on override because `Canvas` is a
+    // `CanvasLike`.
+    getCanvas() {
+      return this;
+    }
+    // Top-level redraw latch. GWEN walks up to the canvas; the canvas's
+    // implementation just sets a flag rather than recursing.
+    redraw() {
+      this._needsRedraw = true;
+    }
+    isRedrawNeeded() {
+      return this._needsRedraw;
+    }
+    // ======================================================================
+    // Scale + background
+    // ======================================================================
+    setScale(s) {
+      if (this._scale === s) return;
+      this._scale = s;
+      this.renderer.setScale(s);
+      this.redraw();
+    }
+    getScale() {
+      return this._scale;
+    }
+    setDrawBackground(b) {
+      this._drawBackground = b;
+    }
+    setBackgroundColor(c) {
+      this._backgroundColor = { r: c.r, g: c.g, b: c.b, a: c.a };
+    }
+    // ======================================================================
+    // Cursor
+    // ======================================================================
+    // Base calls `canvas.setCursor(_cursor)` inside `updateCursor`. We map
+    // GWEN's CursorType onto a CSS keyword and only touch `style.cursor`
+    // when the value actually changes.
+    setCursor(c) {
+      if (this._lastAppliedCursor === c) return;
+      this._lastAppliedCursor = c;
+      this.htmlCanvas.style.cursor = cursorToCss(c);
+    }
+    // ======================================================================
+    // Bounds
+    // ======================================================================
+    // When the canvas itself resizes, every child needs a fresh layout
+    // pass. Base's `onBoundsChanged` would only invalidate when w/h
+    // changed; at the canvas level even a pure translation is rare, so
+    // always invalidate.
+    onBoundsChanged(old) {
+      super.onBoundsChanged(old);
+      this.invalidate();
+      this.invalidateChildren(true);
+      this.redraw();
+    }
+    // ======================================================================
+    // Per-frame lifecycle
+    // ======================================================================
+    // doThink — called once per frame by the host, before `renderCanvas`.
+    // Matches Canvas.cpp:99 (`DoThink`).
+    doThink() {
+      this.processDelayedDeletes();
+      if (this.hidden()) return;
+      this.firstTab = null;
+      this.nextTab = null;
+      this.tabList = [];
+      this.processDelayedDeletes();
+      this.recurseLayout(this.skin);
+      if (this.nextTab == null) this.nextTab = this.firstTab;
+      if (this.mouseFocus && !this.mouseFocus.isVisible()) {
+        this.mouseFocus = null;
+      }
+      if (this.keyboardFocus && (!this.keyboardFocus.isVisible() || !this.keyboardFocus.getKeyboardInputEnabled())) {
+        this.keyboardFocus = null;
+      }
+      if (this.keyboardFocus) {
+        const now = nowSec();
+        for (let i = 0; i < Key.Count; i++) {
+          if (this.keyState[i] && this.keyRepeatTarget !== this.keyboardFocus) {
+            this.keyState[i] = false;
+            continue;
+          }
+          if (this.keyState[i] && now > this.keyNextRepeat[i]) {
+            this.keyNextRepeat[i] = now + KEY_REPEAT_RATE;
+            this.keyboardFocus.onKeyPress(i, true);
+          }
+        }
+      }
+      this.updateHoveredControl();
+    }
+    // renderCanvas — runs the full render pass. Callers should check
+    // `isRedrawNeeded()` first if they want to elide unchanged frames.
+    renderCanvas() {
+      if (!this._needsRedraw) return;
+      this._needsRedraw = false;
+      const r = this.renderer;
+      r.begin();
+      this.recurseLayout(this.skin);
+      r.setClipRegion(this.getRenderBounds());
+      r.setRenderOffset(point(-this.x(), -this.y()));
+      r.setScale(this._scale);
+      if (this._drawBackground) {
+        r.setDrawColor(this._backgroundColor);
+        r.drawFilledRect(this.getRenderBounds());
+      }
+      this.doRender(this.skin);
+      this.renderToolTip();
+      this.renderDragPreview();
+      r.end();
+    }
+    // Tooltip overlay — drawn last so it floats above every other control.
+    // Triggered by `hoveredControl` having a `_toolTip` child that wasn't
+    // suppressed by a setToolTipControl(null). Uses a Label-backed tooltip
+    // when available (set via Label.setToolTip); falls back to rendering
+    // the placeholder Base's `name` as plain text.
+    renderToolTip() {
+      const hovered = this.hoveredControl;
+      if (!hovered || hovered === this) return;
+      const tip = hovered.getToolTip();
+      if (!tip) return;
+      const pad = 12;
+      let tw = tip.width();
+      let th = tip.height();
+      if (tw <= 0 || th <= 0) {
+        const text = tip.getName();
+        if (!text) return;
+        const size = this.skin.renderer.measureText(this.skin.getDefaultFont(), text);
+        tw = size.x + 10;
+        th = size.y + 6;
+      }
+      let tx = this.mousePosition.x + pad;
+      let ty = this.mousePosition.y + pad + 8;
+      if (tx + tw > this.width()) tx = this.width() - tw - 2;
+      if (ty + th > this.height()) ty = this.mousePosition.y - th - 4;
+      if (tx < 2) tx = 2;
+      if (ty < 2) ty = 2;
+      tip.setPos(tx, ty);
+      const wasHidden = tip.hidden();
+      tip.setHidden(false);
+      const renderer = this.skin.renderer;
+      const savedOffset = renderer.getRenderOffset();
+      renderer.setRenderOffset(point(savedOffset.x + tx, savedOffset.y + ty));
+      this.skin.drawToolTip(tip);
+      renderer.setRenderOffset(savedOffset);
+      tip.doRender(this.skin);
+      tip.setHidden(wasHidden);
+    }
+    // Drag preview — renders the dragged source at the pointer offset
+    // recorded when the drag started (`p.holdoffset`). Provides visual
+    // feedback that mirrors what GWEN's DragAndDrop manager draws.
+    renderDragPreview() {
+      if (!this.dragStarted || !this.dragPackage) return;
+      const dc = this.dragPackage.drawcontrol;
+      if (!dc) return;
+      const ho = this.dragPackage.holdoffset;
+      const renderer = this.skin.renderer;
+      const w = dc.width();
+      const h = dc.height();
+      if (w <= 0 || h <= 0) return;
+      const oldOffset = renderer.getRenderOffset();
+      const targetX = this.mousePosition.x - ho.x;
+      const targetY = this.mousePosition.y - ho.y;
+      renderer.setRenderOffset(point(targetX - dc.x(), targetY - dc.y()));
+      dc.doRender(this.skin);
+      renderer.setRenderOffset(oldOffset);
+    }
+    // ======================================================================
+    // Hover
+    // ======================================================================
+    updateHoveredControl() {
+      if (this.dragStarted) return;
+      const mx = this.mousePosition.x;
+      const my = this.mousePosition.y;
+      let candidate = null;
+      const raw = this.getControlAt(mx - this.x(), my - this.y());
+      if (raw && raw !== this) candidate = raw;
+      if (candidate !== this.hoveredControl) {
+        const old = this.hoveredControl;
+        this.hoveredControl = null;
+        if (old) old.onMouseLeave();
+        this.hoveredControl = candidate;
+        if (candidate) candidate.onMouseEnter();
+      }
+      if (this.mouseFocus && this.mouseFocus.getCanvas() === this) {
+        this.hoveredControl = this.mouseFocus;
+      }
+    }
+    // ======================================================================
+    // Focus helpers
+    // ======================================================================
+    // Climb from `start` to find the first ancestor that wants keyboard
+    // input. Matches Canvas.cpp:InputMouseButton behaviour.
+    findKeyboardFocus(start) {
+      let node = start;
+      while (node) {
+        if (node.getKeyboardInputEnabled()) {
+          node.focus();
+          return node;
+        }
+        node = node.parent;
+      }
+      if (this.keyboardFocus) this.keyboardFocus.blur();
+      return null;
+    }
+    // ======================================================================
+    // Delayed delete
+    // ======================================================================
+    addDelayedDelete(ctrl) {
+      if (this._delayedDelete.has(ctrl)) return;
+      this._delayedDelete.add(ctrl);
+      this._delayedDeleteList.push(ctrl);
+    }
+    // Called from Base.dispose via CanvasLike so we can forget a control
+    // that's going away right now. Without this, `processDelayedDeletes`
+    // would call `dispose()` on something already disposed.
+    preDeleteCanvas(ctrl) {
+      if (this._delayedDelete.has(ctrl)) {
+        this._delayedDelete.delete(ctrl);
+        const i = this._delayedDeleteList.indexOf(ctrl);
+        if (i !== -1) this._delayedDeleteList.splice(i, 1);
+      }
+      if (this.hoveredControl === ctrl) this.hoveredControl = null;
+      if (this.keyboardFocus === ctrl) this.keyboardFocus = null;
+      if (this.mouseFocus === ctrl) this.mouseFocus = null;
+    }
+    processDelayedDeletes() {
+      if (this._delayedDeleteList.length === 0) return;
+      const snapshot = this._delayedDeleteList.slice();
+      this._delayedDelete.clear();
+      this._delayedDeleteList.length = 0;
+      for (let i = 0; i < snapshot.length; i++) {
+        snapshot[i].dispose();
+      }
+      this.redraw();
+    }
+    // Convenience for host code that wants to nuke every child in one
+    // call without tearing down the Canvas itself.
+    releaseChildren() {
+      const kids = this.children.slice();
+      for (let i = 0; i < kids.length; i++) {
+        kids[i].dispose();
+      }
+    }
+    // ======================================================================
+    // Dispose
+    // ======================================================================
+    dispose() {
+      if (this._detachInput) {
+        this._detachInput();
+        this._detachInput = null;
+      }
+      this.releaseChildren();
+      super.dispose();
+    }
+    // ======================================================================
+    // InputTarget — raw input from core/Input.ts
+    // ======================================================================
+    inputMouseMoved(x, y, dx, dy) {
+      if (this.hidden()) return false;
+      this.mousePosition = point(x, y);
+      if (this.dragCandidate && !this.dragStarted) {
+        const ddx = x - this.dragStartPos.x;
+        const ddy = y - this.dragStartPos.y;
+        if (ddx * ddx + ddy * ddy >= DRAG_START_THRESHOLD * DRAG_START_THRESHOLD) {
+          this.beginDrag(x, y);
+        }
+      }
+      if (this.dragStarted) {
+        this.updateDragHover(x, y);
+        this.redraw();
+        return true;
+      }
+      this.updateHoveredControl();
+      const hovered = this.hoveredControl;
+      if (!hovered || hovered === this) return false;
+      hovered.onMouseMoved(x, y, dx, dy);
+      hovered.updateCursor();
+      return true;
+    }
+    // Drag-and-drop dispatch helpers.
+    beginDrag(x, y) {
+      if (!this.dragCandidate) return;
+      const pkg = this.dragCandidate.dragAndDrop_GetPackage(x, y);
+      if (!pkg || !pkg.draggable) {
+        this.dragCandidate = null;
+        return;
+      }
+      if (!this.dragCandidate.dragAndDrop_StartDragging(pkg, x, y)) {
+        this.dragCandidate = null;
+        return;
+      }
+      this.dragPackage = pkg;
+      this.dragStarted = true;
+      if (this.hoveredControl && this.hoveredControl !== this) {
+        const old = this.hoveredControl;
+        this.hoveredControl = null;
+        old.onMouseLeave();
+      }
+      const dc = pkg.drawcontrol;
+      if (dc) {
+        const target = pkg.name === "TabWindowMove" && dc.parent ? dc.parent : dc;
+        this.dragHiddenSource = target;
+        this.dragHiddenSourceWasHidden = target.hidden();
+        target.setHidden(true);
+      }
+    }
+    updateDragHover(x, y) {
+      if (!this.dragPackage) return;
+      const raw = this.getControlAt(x - this.x(), y - this.y());
+      let target = raw === this ? null : raw;
+      while (target) {
+        if (target !== this.dragCandidate && target.dragAndDrop_CanAcceptPackage(this.dragPackage)) {
+          break;
+        }
+        target = target.parent;
+      }
+      if (target !== this.dragHoverTarget) {
+        if (this.dragHoverTarget) this.dragHoverTarget.dragAndDrop_HoverLeave(this.dragPackage);
+        this.dragHoverTarget = target;
+        if (target) target.dragAndDrop_HoverEnter(this.dragPackage, x, y);
+      }
+      if (target) target.dragAndDrop_Hover(this.dragPackage, x, y);
+    }
+    endDrag(x, y) {
+      if (!this.dragStarted || !this.dragCandidate || !this.dragPackage) {
+        this.dragCandidate = null;
+        this.dragPackage = null;
+        this.dragStarted = false;
+        this.dragHoverTarget = null;
+        this.restoreDragHiddenSource(false, "");
+        return;
+      }
+      let success = false;
+      if (this.dragHoverTarget) {
+        success = this.dragHoverTarget.dragAndDrop_HandleDrop(this.dragPackage, x, y);
+        this.dragHoverTarget.dragAndDrop_HoverLeave(this.dragPackage);
+      }
+      this.dragCandidate.dragAndDrop_EndDragging(success, x, y);
+      this.restoreDragHiddenSource(success, this.dragPackage.name);
+      this.dragCandidate = null;
+      this.dragPackage = null;
+      this.dragStarted = false;
+      this.dragHoverTarget = null;
+    }
+    // Reverse the `setHidden(true)` from `beginDrag`. For a TabWindowMove
+    // we only leave the source DockBase hidden if the drop emptied it
+    // (consolidation already hid it on the way out — restoring would
+    // put an empty bordered dock back on screen). A SAME-source drop
+    // (re-docking the same dock onto its own edge to claim corner
+    // priority) reaches HandleDrop's "skip the move" branch — the dock
+    // still has all its tabs, so we restore visibility. Cancelled
+    // drags, single-tab moves, and non-dock drags all also restore.
+    restoreDragHiddenSource(success, packageName) {
+      const target = this.dragHiddenSource;
+      if (!target) return;
+      this.dragHiddenSource = null;
+      let leaveHidden = false;
+      if (success && packageName === "TabWindowMove") {
+        const maybeDock = target;
+        leaveHidden = typeof maybeDock.isEmpty === "function" && maybeDock.isEmpty();
+      }
+      if (!leaveHidden) {
+        target.setHidden(this.dragHiddenSourceWasHidden);
+      }
+    }
+    inputMouseButton(button, pressed) {
+      if (this.hidden()) return false;
+      if (button === 0 && !pressed && this.dragStarted) {
+        this.leftMouseDown = false;
+        this.endDrag(this.mousePosition.x, this.mousePosition.y);
+        return true;
+      }
+      const hovered = this.hoveredControl;
+      if (pressed && (!hovered || !hovered.isMenuComponent() && !hovered.ownsOpenMenu())) {
+        this.closeMenus();
+      }
+      if (button === 2 && pressed && (!hovered || !hovered.isMenuComponent())) {
+        this.tryShowContextMenu(
+          hovered ?? this,
+          this.mousePosition.x,
+          this.mousePosition.y
+        );
+      }
+      if (!hovered || !hovered.isVisible() || hovered === this) return false;
+      if (button >= MAX_MOUSE_BUTTONS) return false;
+      if (button === 0) this.leftMouseDown = pressed;
+      else if (button === 2) this.rightMouseDown = pressed;
+      const now = nowSec();
+      const isDouble = pressed && this.lastClickPos.x === this.mousePosition.x && this.lastClickPos.y === this.mousePosition.y && now - this.lastClickTime[button] < DOUBLE_CLICK_SPEED;
+      if (pressed && !isDouble) {
+        this.lastClickTime[button] = now;
+        this.lastClickPos = { x: this.mousePosition.x, y: this.mousePosition.y };
+      }
+      if (pressed) {
+        if (!hovered.isMenuComponent() && !hovered.ownsOpenMenu()) {
+          this.findKeyboardFocus(hovered);
+        }
+      }
+      if (button === 0) {
+        if (pressed) {
+          let scan = hovered;
+          while (scan && !scan.dragAndDrop_Draggable()) scan = scan.parent;
+          if (scan) {
+            this.dragCandidate = scan;
+            this.dragStartPos = { x: this.mousePosition.x, y: this.mousePosition.y };
+            this.dragStarted = false;
+          }
+        } else {
+          if (this.dragStarted) {
+            this.endDrag(this.mousePosition.x, this.mousePosition.y);
+          } else {
+            this.dragCandidate = null;
+          }
+        }
+      }
+      hovered.updateCursor();
+      if (pressed) hovered.touch();
+      const mx = this.mousePosition.x;
+      const my = this.mousePosition.y;
+      switch (button) {
+        case 0:
+          if (pressed && isDouble) {
+            hovered.onMouseDoubleClickLeft(mx, my);
+          } else {
+            hovered.onMouseClickLeft(mx, my, pressed);
+          }
+          break;
+        case 2:
+          if (pressed && isDouble) {
+            hovered.onMouseDoubleClickRight(mx, my);
+          } else {
+            hovered.onMouseClickRight(mx, my, pressed);
+          }
+          break;
+        default:
+          break;
+      }
+      return true;
+    }
+    inputMouseWheel(val) {
+      if (this.hidden()) return false;
+      const hovered = this.hoveredControl;
+      if (!hovered || hovered.getCanvas() !== this) return false;
+      hovered.onMouseWheeled(val);
+      return true;
+    }
+    // =====================================================================
+    // Context menus
+    //
+    // Walks from `start` up the parent chain calling
+    // `onContextMenuRequest(x, y)`. The first non-null Menu wins and is
+    // opened at the cursor position. Auto-reparents the menu onto this
+    // canvas so it always draws above everything regardless of how the
+    // user wired it up. Caller-side bubbling: a control that returns
+    // `null` from `onContextMenuRequest` defers to its parent — handy
+    // when the inner control wants the parent's menu, or when a
+    // dynamically-built menu decides to bow out.
+    // =====================================================================
+    tryShowContextMenu(start, x, y) {
+      let scan = start;
+      while (scan) {
+        const candidate = scan.onContextMenuRequest(x, y);
+        if (candidate instanceof Menu) {
+          if (candidate.parent !== this) candidate.setParent(this);
+          candidate.open(point(x, y));
+          return;
+        }
+        scan = scan.parent;
+      }
+    }
+    inputKey(key, pressed) {
+      if (this.hidden()) return false;
+      if (key <= Key.Invalid || key >= Key.Count) return false;
+      const target = this.keyboardFocus && this.keyboardFocus.isVisible() && this.keyboardFocus.getCanvas() === this ? this.keyboardFocus : null;
+      let consumed = false;
+      if (pressed && !this.keyState[key]) {
+        this.keyState[key] = true;
+        this.keyNextRepeat[key] = nowSec() + KEY_REPEAT_DELAY;
+        this.keyRepeatTarget = target;
+        if (target) consumed = target.onKeyPress(key, true);
+      } else if (!pressed && this.keyState[key]) {
+        this.keyState[key] = false;
+        if (target) consumed = target.onKeyRelease(key);
+      }
+      if (target && key === Key.Tab) consumed = true;
+      return consumed;
+    }
+    inputCharacter(ch) {
+      if (this.hidden()) return false;
+      const cp = ch.codePointAt(0);
+      if (cp === void 0 || cp < 32) return false;
+      const target = this.keyboardFocus;
+      if (!target || !target.isVisible() || target.getCanvas() !== this || this.isControlDown()) {
+        return false;
+      }
+      target.onChar(ch);
+      return true;
+    }
+    // Walk the visible control tree for a control with a matching
+    // accelerator binding (added via `Base.addAccelerator`). First match
+    // wins — typically a MenuItem whose `setAccelerator(text)` registered
+    // the binding. The standard clipboard / select-all shortcuts route
+    // straight to a text-input keyboard-focus target before the tree
+    // walk so a focused TextBox eats Ctrl+C/X/V/A even when a menu item
+    // also bound those keys.
+    inputAccelerator(text) {
+      if (this.hidden()) return false;
+      const focus = this.keyboardFocus;
+      if (focus && focus.isVisible() && focus.needsInputChars()) {
+        switch (text) {
+          case "Ctrl+C":
+            focus.onCopy();
+            return true;
+          case "Ctrl+X":
+            focus.onCut();
+            return true;
+          case "Ctrl+V":
+            focus.onPaste();
+            return true;
+          case "Ctrl+A":
+            focus.onSelectAll();
+            return true;
+        }
+      }
+      return this.handleAccelerator(text);
+    }
+    // ======================================================================
+    // Modifier queries
+    // ======================================================================
+    isKeyDown(key) {
+      if (key < 0 || key >= Key.Count) return false;
+      return this.keyState[key];
+    }
+    isControlDown() {
+      return this.keyState[Key.Control] || this.keyState[Key.Command];
+    }
+    isShiftDown() {
+      return this.keyState[Key.Shift];
+    }
+    isAltDown() {
+      return this.keyState[Key.Alt];
+    }
+  };
+
+  // src/controls/Rectangle.ts
+  var Rectangle = class extends Base {
+    constructor() {
+      super(...arguments);
+      this._color = color(255, 255, 255, 255);
+    }
+    getColor() {
+      return this._color;
+    }
+    setColor(c) {
+      this._color = { r: c.r, g: c.g, b: c.b, a: c.a };
+      this.redraw();
+    }
+    render(skin) {
+      skin.renderer.setDrawColor(this._color);
+      skin.renderer.drawFilledRect(this.getRenderBounds());
     }
   };
 
@@ -8071,258 +9001,6 @@ void main() {
     }
   };
 
-  // src/controls/ScrollBarBar.ts
-  var ScrollBarBar = class extends Dragger {
-    constructor(parent) {
-      super(parent);
-      this._horizontal = true;
-      this.setTarget(this);
-      this.setRestrictToParent(true);
-    }
-    setHorizontal(b) {
-      this._horizontal = b;
-    }
-    isHorizontal() {
-      return this._horizontal;
-    }
-    // Track area excludes the parent ScrollBar's two scroll buttons. For a
-    // vertical bar the buttons are square w×w sitting at the top and
-    // bottom; for a horizontal bar they're h×h at the left and right.
-    moveTo(x, y) {
-      const parent = this.parent;
-      if (!parent) {
-        super.moveTo(x, y);
-        return;
-      }
-      if (this._horizontal) {
-        const bs = parent.height();
-        const minX = bs;
-        const maxX = parent.width() - bs - this.width();
-        if (x < minX) x = minX;
-        if (x > maxX) x = maxX;
-        super.moveTo(x, this.y());
-      } else {
-        const bs = parent.width();
-        const minY = bs;
-        const maxY = parent.height() - bs - this.height();
-        if (y < minY) y = minY;
-        if (y > maxY) y = maxY;
-        super.moveTo(this.x(), y);
-      }
-    }
-    render(skin) {
-      skin.drawScrollBarBar(this, this._depressed, this.isHovered(), this._horizontal);
-    }
-  };
-
-  // src/controls/ScrollBarButton.ts
-  var ScrollBarButton = class extends Button {
-    constructor(parent) {
-      super(parent);
-      this._direction = Pos.Top;
-    }
-    setDirection(d) {
-      this._direction = d;
-    }
-    getDirection() {
-      return this._direction;
-    }
-    render(skin) {
-      skin.drawScrollButton(this, this._direction, this.isDepressed(), this.isHovered(), this.isDisabled());
-    }
-  };
-
-  // src/controls/ScrollBar.ts
-  var BaseScrollBar = class extends Base {
-    constructor(parent) {
-      super(parent);
-      this.onBarMoved = new Signal();
-      // Track-area press state — held while a page-nudge click is in progress.
-      this._depressed = false;
-      this._contentSize = 0;
-      this._viewableContentSize = 0;
-      this._nudgeAmount = 20;
-      // Normalized 0..1 scroll position.
-      this._scrolledAmount = 0;
-      this.setBounds(0, 0, 15, 15);
-      this._scrollButtons = [new ScrollBarButton(this), new ScrollBarButton(this)];
-      this._bar = new ScrollBarBar(this);
-      this._bar.onDragged.on(() => {
-        this.recomputeFromBarPosition();
-        this.barMovedNotification();
-      });
-    }
-    // =====================================================================
-    // Config
-    // =====================================================================
-    setContentSize(s) {
-      if (this._contentSize === s) return;
-      this._contentSize = s;
-      this.invalidate();
-    }
-    setViewableContentSize(s) {
-      if (this._viewableContentSize === s) return;
-      this._viewableContentSize = s;
-      this.invalidate();
-    }
-    getContentSize() {
-      return this._contentSize;
-    }
-    getViewableContentSize() {
-      return this._viewableContentSize;
-    }
-    setNudgeAmount(n) {
-      this._nudgeAmount = n;
-    }
-    getScrolledAmount() {
-      return this._scrolledAmount;
-    }
-    // Matches `BaseScrollBar::GetNudgeAmount` — track-click nudges by one
-    // page (viewable/content); button nudges by the fixed nudge pixel
-    // count expressed as a fraction of the content size.
-    getNudgeAmount() {
-      const denom = this._contentSize <= 0 ? 1 : this._contentSize;
-      if (this._depressed) return this._viewableContentSize / denom;
-      return this._nudgeAmount / denom;
-    }
-    setScrolledAmount(amount, forceUpdate) {
-      if (amount < 0) amount = 0;
-      else if (amount > 1) amount = 1;
-      if (amount === this._scrolledAmount && !forceUpdate) return false;
-      this._scrolledAmount = amount;
-      this.invalidate();
-      this.barMovedNotification();
-      return true;
-    }
-    barMovedNotification() {
-      const info = eventInfo();
-      info.controlCaller = this;
-      this.onBarMoved.emit(info);
-    }
-  };
-  var HorizontalScrollBar = class extends BaseScrollBar {
-    constructor(parent) {
-      super(parent);
-      this._bar.setHorizontal(true);
-      this._scrollButtons[0].setDirection(Pos.Left);
-      this._scrollButtons[1].setDirection(Pos.Right);
-      this._scrollButtons[0].onPress.on(() => this.scrollToLeft());
-      this._scrollButtons[1].onPress.on(() => this.scrollToRight());
-    }
-    scrollToLeft() {
-      this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
-    }
-    scrollToRight() {
-      this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
-    }
-    layout(skin) {
-      super.layout(skin);
-      const bs = this.height();
-      this._scrollButtons[0].setBounds(0, 0, bs, bs);
-      this._scrollButtons[1].setBounds(this.width() - bs, 0, bs, bs);
-      let barW = 0;
-      if (this._contentSize > 0 && this._viewableContentSize > 0) {
-        barW = Math.max(bs * 0.5, this._viewableContentSize / this._contentSize * (this.width() - bs * 2));
-      }
-      const trackW = this.width() - bs * 2;
-      const travel = trackW - barW;
-      const barX = bs + this._scrolledAmount * Math.max(0, travel);
-      this._bar.setBounds(barX, 0, barW, this.height());
-    }
-    recomputeFromBarPosition() {
-      const bs = this.height();
-      const trackW = this.width() - bs * 2;
-      const travel = trackW - this._bar.width();
-      if (travel <= 0) {
-        this._scrolledAmount = 0;
-        return;
-      }
-      const raw = (this._bar.x() - bs) / travel;
-      this._scrolledAmount = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    }
-    onMouseClickLeft(x, y, pressed) {
-      if (!pressed) {
-        this._depressed = false;
-        const canvas2 = this.getCanvas();
-        if (canvas2 && canvas2.mouseFocus === this) canvas2.mouseFocus = null;
-        return;
-      }
-      this._depressed = true;
-      const canvas = this.getCanvas();
-      if (canvas) canvas.mouseFocus = this;
-      const local = this.canvasPosToLocal(point(x, y));
-      if (local.x < this._bar.x()) {
-        this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
-      } else if (local.x > this._bar.x() + this._bar.width()) {
-        this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
-      }
-    }
-    render(skin) {
-      skin.drawScrollBar(this, true, this._depressed);
-    }
-  };
-  var VerticalScrollBar = class extends BaseScrollBar {
-    constructor(parent) {
-      super(parent);
-      this._bar.setHorizontal(false);
-      this._scrollButtons[0].setDirection(Pos.Top);
-      this._scrollButtons[1].setDirection(Pos.Bottom);
-      this._scrollButtons[0].onPress.on(() => this.scrollToTop());
-      this._scrollButtons[1].onPress.on(() => this.scrollToBottom());
-    }
-    scrollToTop() {
-      this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
-    }
-    scrollToBottom() {
-      this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
-    }
-    layout(skin) {
-      super.layout(skin);
-      const bs = this.width();
-      this._scrollButtons[0].setBounds(0, 0, bs, bs);
-      this._scrollButtons[1].setBounds(0, this.height() - bs, bs, bs);
-      let barH = 0;
-      if (this._contentSize > 0 && this._viewableContentSize > 0) {
-        barH = Math.max(bs * 0.5, this._viewableContentSize / this._contentSize * (this.height() - bs * 2));
-      }
-      const trackH = this.height() - bs * 2;
-      const travel = trackH - barH;
-      const barY = bs + this._scrolledAmount * Math.max(0, travel);
-      this._bar.setBounds(0, barY, this.width(), barH);
-    }
-    recomputeFromBarPosition() {
-      const bs = this.width();
-      const trackH = this.height() - bs * 2;
-      const travel = trackH - this._bar.height();
-      if (travel <= 0) {
-        this._scrolledAmount = 0;
-        return;
-      }
-      const raw = (this._bar.y() - bs) / travel;
-      this._scrolledAmount = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    }
-    onMouseClickLeft(x, y, pressed) {
-      if (!pressed) {
-        this._depressed = false;
-        const canvas2 = this.getCanvas();
-        if (canvas2 && canvas2.mouseFocus === this) canvas2.mouseFocus = null;
-        return;
-      }
-      this._depressed = true;
-      const canvas = this.getCanvas();
-      if (canvas) canvas.mouseFocus = this;
-      const local = this.canvasPosToLocal(point(x, y));
-      if (local.y < this._bar.y()) {
-        this.setScrolledAmount(this._scrolledAmount - this.getNudgeAmount(), true);
-      } else if (local.y > this._bar.y() + this._bar.height()) {
-        this.setScrolledAmount(this._scrolledAmount + this.getNudgeAmount(), true);
-      }
-    }
-    render(skin) {
-      skin.drawScrollBar(this, false, this._depressed);
-    }
-  };
-
   // src/controls/TreeNode.ts
   var ToggleButton = class extends Button {
     constructor(parent) {
@@ -8596,6 +9274,275 @@ void main() {
     }
   };
 
+  // src/controls/ActionBar.ts
+  var DEFAULT_ITEM_SIZE = 28;
+  var BAR_PADDING = 2;
+  var ActionBarButton = class extends Button {
+    constructor(parent) {
+      super(parent);
+      this.setSize(DEFAULT_ITEM_SIZE, DEFAULT_ITEM_SIZE);
+      this.setText("");
+    }
+  };
+  var ActionBarSeparator = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this.setSize(8, 8);
+      this.setMouseInputEnabled(false);
+    }
+    render(skin) {
+      const r = this.getRenderBounds();
+      skin.renderer.setDrawColor(color(140, 140, 140, 255));
+      if (r.h > r.w) {
+        const cx = r.x + Math.floor(r.w / 2);
+        skin.renderer.drawFilledRect(rect(cx, r.y + 4, 1, Math.max(0, r.h - 8)));
+      } else {
+        const cy = r.y + Math.floor(r.h / 2);
+        skin.renderer.drawFilledRect(rect(r.x + 4, cy, Math.max(0, r.w - 8), 1));
+      }
+    }
+  };
+  var ActionBar = class extends Base {
+    constructor(parent) {
+      super(parent);
+      this._vertical = false;
+      this._itemSize = DEFAULT_ITEM_SIZE;
+      this._columns = 1;
+      this._radioMode = false;
+      this._activeButton = null;
+      this.setPadding(margin(BAR_PADDING, BAR_PADDING, BAR_PADDING, BAR_PADDING));
+      this.setSize(200, this._itemSize + BAR_PADDING * 2);
+    }
+    // =====================================================================
+    // Orientation
+    // =====================================================================
+    setVertical(b) {
+      if (this._vertical === b) return;
+      this._vertical = b;
+      if (b) this.setSize(this._itemSize * this._columns + BAR_PADDING * 2, Math.max(this.height(), 100));
+      else this.setSize(Math.max(this.width(), 100), this._itemSize + BAR_PADDING * 2);
+      this.relayoutItems();
+    }
+    isVertical() {
+      return this._vertical;
+    }
+    // =====================================================================
+    // Item size
+    // =====================================================================
+    setItemSize(px) {
+      if (this._itemSize === px) return;
+      this._itemSize = px;
+      if (this._vertical) this.setWidth(px * this._columns + BAR_PADDING * 2);
+      else this.setHeight(px + BAR_PADDING * 2);
+      for (const c of this.children) {
+        if (c instanceof ActionBarButton) c.setSize(px, px);
+      }
+      this.invalidate();
+    }
+    getItemSize() {
+      return this._itemSize;
+    }
+    // =====================================================================
+    // Columns (multi-column tool palettes — only meaningful when vertical)
+    // =====================================================================
+    /**
+     * Set the number of columns for vertical (tool-palette) mode. With
+     * `n > 1` the bar's width tracks `itemSize * n + 2*padding` and items
+     * flow left-to-right then top-to-bottom in the grid (Photoshop-style
+     * two-column toolbox). A no-op visually in horizontal mode but the
+     * value is preserved across orientation flips.
+     */
+    setColumns(n) {
+      const cols = Math.max(1, Math.floor(n));
+      if (this._columns === cols) return;
+      this._columns = cols;
+      if (this._vertical) this.setWidth(this._itemSize * cols + BAR_PADDING * 2);
+      this.relayoutItems();
+    }
+    getColumns() {
+      return this._columns;
+    }
+    // =====================================================================
+    // Radio mode (single-active toggle — Photoshop-style tool selection)
+    // =====================================================================
+    /**
+     * Enable / disable single-active toggle behaviour. While radio mode is
+     * on:
+     *   - Every `ActionBarButton` child is auto-flagged as a toggle.
+     *   - Activating one button deactivates whichever was previously
+     *     active.
+     *   - Clicking the active button re-activates it — radio mode keeps
+     *     exactly one tool selected at all times once the first is
+     *     chosen.
+     */
+    setRadioMode(b) {
+      if (this._radioMode === b) return;
+      this._radioMode = b;
+      if (!b) return;
+      let firstActive = null;
+      for (const c of this.children) {
+        if (c instanceof ActionBarButton) {
+          c.setIsToggle(true);
+          if (c.getToggleState() && !firstActive) firstActive = c;
+        }
+      }
+      this._activeButton = firstActive;
+      for (const c of this.children) {
+        if (c instanceof ActionBarButton && c !== firstActive && c.getToggleState()) {
+          c.setToggleState(false);
+        }
+      }
+    }
+    isRadioMode() {
+      return this._radioMode;
+    }
+    /**
+     * Programmatically promote `btn` to the active selection (or pass
+     * `null` to clear). Honours the radio rule: previous active is
+     * deactivated. Called automatically by the radio enforcement when a
+     * user clicks a button.
+     */
+    setActiveButton(btn) {
+      if (this._activeButton === btn) return;
+      const prev = this._activeButton;
+      this._activeButton = btn;
+      if (btn) btn.setToggleState(true);
+      if (prev && prev !== btn) prev.setToggleState(false);
+    }
+    getActiveButton() {
+      return this._activeButton;
+    }
+    // =====================================================================
+    // Item construction
+    // =====================================================================
+    /**
+     * Add a square action button. Pass an icon Texture to use the icon
+     * mode (centred image, no text); pass `text` to label it. Both can
+     * be combined. In radio mode the button is auto-flagged as a toggle.
+     */
+    addButton(text = "", icon) {
+      const b = new ActionBarButton(this);
+      if (text) b.setText(text);
+      if (icon) {
+        const iconPx = Math.max(8, this._itemSize - 8);
+        b.setImageTexture(icon, iconPx, iconPx, true);
+      }
+      b.setSize(this._itemSize, this._itemSize);
+      this.attachRadioHandlers(b);
+      if (this._radioMode) b.setIsToggle(true);
+      this.dockChild(b);
+      return b;
+    }
+    /**
+     * Add a thin divider between two groups of items.
+     */
+    addSeparator() {
+      const s = new ActionBarSeparator(this);
+      s.setSize(8, 8);
+      this.dockChild(s);
+      return s;
+    }
+    /**
+     * Add an arbitrary control as an item — useful for drop-downs
+     * (`ComboBox`), label readouts, or custom widgets. The control's
+     * perpendicular dimension is auto-centered with margin so non-square
+     * widgets (a 22-tall ComboBox in a 28-tall slot, say) don't get
+     * visually stretched by the dock pass.
+     */
+    addItem(ctrl) {
+      if (ctrl.parent !== this) ctrl.setParent(this);
+      const slot = this._itemSize;
+      if (this._vertical) {
+        const w = ctrl.width();
+        if (w > 0 && w < slot) {
+          const inset = Math.floor((slot - w) / 2);
+          ctrl.setMargin(margin(inset, 0, inset, 0));
+        }
+      } else {
+        const h = ctrl.height();
+        if (h > 0 && h < slot) {
+          const inset = Math.floor((slot - h) / 2);
+          ctrl.setMargin(margin(0, inset, 0, inset));
+        }
+      }
+      this.dockChild(ctrl);
+      return ctrl;
+    }
+    // =====================================================================
+    // Internal — radio enforcement
+    // =====================================================================
+    // Subscribe once per button. Handlers bail when radio mode is off, so
+    // we can wire all buttons unconditionally and just flip the flag at
+    // the bar level when needed.
+    attachRadioHandlers(btn) {
+      btn.onToggleOn.on(() => {
+        if (!this._radioMode) return;
+        const prev = this._activeButton;
+        if (prev === btn) return;
+        this._activeButton = btn;
+        if (prev) prev.setToggleState(false);
+      });
+      btn.onToggleOff.on(() => {
+        if (!this._radioMode) return;
+        if (this._activeButton === btn) btn.setToggleState(true);
+      });
+    }
+    // =====================================================================
+    // Internal — docking / layout helpers
+    // =====================================================================
+    dockChild(c) {
+      if (this._vertical && this._columns > 1) {
+        c.dock(Pos.None);
+      } else {
+        c.dock(this._vertical ? Pos.Top : Pos.Left);
+      }
+    }
+    relayoutItems() {
+      for (const c of this.children) this.dockChild(c);
+      this.invalidate();
+    }
+    // =====================================================================
+    // Layout — multi-column grid for vertical tool palettes. Single-column
+    // mode relies on the dock pass; multi-column mode positions items
+    // manually so they flow left-to-right then top-to-bottom.
+    // =====================================================================
+    layout(skin) {
+      super.layout(skin);
+      if (!this._vertical || this._columns <= 1) return;
+      const pad = this.getPadding();
+      const slot = this._itemSize;
+      const x0 = pad.left;
+      let y = pad.top;
+      let col = 0;
+      for (const c of this.children) {
+        if (c.hidden()) continue;
+        if (c instanceof ActionBarSeparator) {
+          if (col !== 0) {
+            y += slot;
+            col = 0;
+          }
+          c.setBounds(x0, y, slot * this._columns, 8);
+          y += 8;
+          continue;
+        }
+        c.setBounds(x0 + col * slot, y, slot, slot);
+        col++;
+        if (col >= this._columns) {
+          col = 0;
+          y += slot;
+        }
+      }
+    }
+    // =====================================================================
+    // Render — reuse the existing menu-strip background so the action bar
+    // matches the visual language of MenuStrip / ToolBar. A custom skin
+    // region would be a future refinement.
+    // =====================================================================
+    render(skin) {
+      skin.drawMenuStrip(this);
+    }
+  };
+
   // src/controls/CollapsibleCategory.ts
   var CategoryButton = class extends Button {
     constructor() {
@@ -8781,6 +9728,28 @@ void main() {
     }
     render(skin) {
       skin.drawTabButton(this, this.isActive(), this._tabDock);
+    }
+    // When this is the only tab in a docked-style TabControl (i.e. one
+    // whose strip plays the title-bar role), promote the drag to a
+    // whole-dock move so the user gets the same outcome as grabbing the
+    // strip's empty area. Without this, "grab the lone tab" and "grab
+    // the title bar" silently produced different package names — same
+    // visual effect for the user (a single tab's TC ends up empty
+    // either way), but inconsistent intermediate state and edge cases
+    // (e.g. drop targets that accept TabWindowMove but not
+    // TabButtonMove). With 2+ tabs the conventional single-tab move
+    // kicks in unchanged.
+    dragAndDrop_StartDragging(p, x, y) {
+      const tc = this._tabControl;
+      const strip = tc?.getTabStrip?.();
+      if (strip?.showsAsHeader?.() && tc?.tabCount?.() === 1) {
+        p.name = "TabWindowMove";
+        p.holdoffset = this.canvasPosToLocal({ x, y });
+        p.drawcontrol = tc;
+        return true;
+      }
+      p.name = "TabButtonMove";
+      return super.dragAndDrop_StartDragging(p, x, y);
     }
   };
 
@@ -9143,166 +10112,6 @@ void main() {
     }
   };
 
-  // src/controls/ScrollControl.ts
-  var ScrollControl = class extends Base {
-    constructor(parent) {
-      super(parent);
-      this._canScrollH = true;
-      this._canScrollV = true;
-      this._autoHideBars = false;
-      this.setMouseInputEnabled(false);
-      this._vBar = new VerticalScrollBar(this);
-      this._vBar.dock(Pos.Right);
-      this._vBar.setWidth(15);
-      this._vBar.onBarMoved.on(() => this.invalidate());
-      this._hBar = new HorizontalScrollBar(this);
-      this._hBar.dock(Pos.Bottom);
-      this._hBar.setHeight(15);
-      this._hBar.onBarMoved.on(() => this.invalidate());
-      const inner = new Base(this);
-      inner.setMargin(margin(5, 5, 5, 5));
-      inner.setMouseInputEnabled(true);
-      inner.sendToBack();
-      this.setInnerPanel(inner);
-    }
-    // =====================================================================
-    // Config
-    // =====================================================================
-    setScroll(h, v) {
-      this._canScrollH = h;
-      this._canScrollV = v;
-      this.invalidate();
-    }
-    canScrollH() {
-      return this._canScrollH;
-    }
-    canScrollV() {
-      return this._canScrollV;
-    }
-    setAutoHideBars(b) {
-      this._autoHideBars = b;
-    }
-    getVerticalScrollBar() {
-      return this._vBar;
-    }
-    getHorizontalScrollBar() {
-      return this._hBar;
-    }
-    // =====================================================================
-    // Scroll-to-edge helpers
-    // =====================================================================
-    scrollToTop() {
-      this._vBar.setScrolledAmount(0, true);
-    }
-    scrollToBottom() {
-      this._vBar.setScrolledAmount(1, true);
-    }
-    scrollToLeft() {
-      this._hBar.setScrolledAmount(0, true);
-    }
-    scrollToRight() {
-      this._hBar.setScrolledAmount(1, true);
-    }
-    clear() {
-      const inner = this.getInnerPanel();
-      if (inner) inner.removeAllChildren();
-      this.invalidate();
-    }
-    // =====================================================================
-    // Scroll-bar update pipeline
-    //
-    // Called from `layout()` each time the tree re-lays out. We compute
-    // content extents from the inner panel's children, feed the bars, and
-    // apply the resulting fractional scroll offset back to the inner panel.
-    // =====================================================================
-    updateScrollBars() {
-      const inner = this.getInnerPanel();
-      if (!inner) return;
-      let contentW = 0;
-      let contentH = 0;
-      for (const c of inner.children) {
-        if (!c.isVisible()) continue;
-        const r = c.x() + c.width();
-        const b = c.y() + c.height();
-        if (r > contentW) contentW = r;
-        if (b > contentH) contentH = b;
-      }
-      const pad = this.getPadding();
-      const baseW = this.width() - pad.left - pad.right;
-      const baseH = this.height() - pad.top - pad.bottom;
-      let vHidden = !this._canScrollV;
-      let hHidden = !this._canScrollH;
-      let viewW = baseW - (vHidden ? 0 : this._vBar.width());
-      let viewH = baseH - (hHidden ? 0 : this._hBar.height());
-      for (let pass = 0; pass < 2; pass++) {
-        const nextVHidden = !this._canScrollV || this._autoHideBars && contentH <= viewH;
-        const nextHHidden = !this._canScrollH || this._autoHideBars && contentW <= viewW;
-        if (nextVHidden === vHidden && nextHHidden === hHidden) break;
-        vHidden = nextVHidden;
-        hHidden = nextHHidden;
-        viewW = baseW - (vHidden ? 0 : this._vBar.width());
-        viewH = baseH - (hHidden ? 0 : this._hBar.height());
-      }
-      this._vBar.setHidden(vHidden);
-      this._hBar.setHidden(hHidden);
-      this._vBar.setContentSize(Math.max(contentH, viewH));
-      this._vBar.setViewableContentSize(viewH);
-      this._hBar.setContentSize(Math.max(contentW, viewW));
-      this._hBar.setViewableContentSize(viewW);
-      const panelW = this._canScrollH ? Math.max(viewW, contentW) : viewW;
-      const panelH = this._canScrollV ? Math.max(viewH, contentH) : viewH;
-      const overflowH = Math.max(0, contentH - viewH);
-      const overflowW = Math.max(0, contentW - viewW);
-      inner.setBounds(
-        pad.left + (this._canScrollH ? -this._hBar.getScrolledAmount() * overflowW : 0),
-        pad.top + (this._canScrollV ? -this._vBar.getScrolledAmount() * overflowH : 0),
-        panelW,
-        panelH
-      );
-    }
-    // =====================================================================
-    // Overrides
-    // =====================================================================
-    layout(skin) {
-      super.layout(skin);
-      this.updateScrollBars();
-    }
-    // postLayout runs AFTER children have laid out, so contentH/contentW
-    // reflect the children's settled bounds. Re-evaluate the bars here too —
-    // on the first frame, layout() sees stale child sizes (e.g. a
-    // CollapsibleCategory's height is 22 until its own postLayout fits it
-    // to its rows). If visibility flips here, invalidate so the next layout
-    // pass re-docks children at the corrected viewport width.
-    postLayout(skin) {
-      super.postLayout(skin);
-      const beforeV = this._vBar.hidden();
-      const beforeH = this._hBar.hidden();
-      this.updateScrollBars();
-      if (this._vBar.hidden() !== beforeV || this._hBar.hidden() !== beforeH) {
-        this.invalidate();
-      }
-    }
-    onMouseWheeled(delta) {
-      if (this._canScrollV && !this._vBar.hidden()) {
-        if (this._vBar.setScrolledAmount(
-          this._vBar.getScrolledAmount() - this._vBar.getNudgeAmount() * (delta / 60),
-          true
-        )) {
-          return true;
-        }
-      }
-      if (this._canScrollH && !this._hBar.hidden()) {
-        if (this._hBar.setScrolledAmount(
-          this._hBar.getScrolledAmount() - this._hBar.getNudgeAmount() * (delta / 60),
-          true
-        )) {
-          return true;
-        }
-      }
-      return super.onMouseWheeled(delta);
-    }
-  };
-
   // src/controls/DockedTabControl.ts
   var DockedTabControl = class _DockedTabControl extends TabControl {
     constructor(parent) {
@@ -9393,442 +10202,6 @@ void main() {
     // callers should still prefer `handleTabPress`.
     onTabPressedExt(btn) {
       this.handleTabPress(btn);
-    }
-  };
-
-  // src/controls/MenuItem.ts
-  var RightArrow = class extends Base {
-    constructor(parent) {
-      super(parent);
-      this.setMouseInputEnabled(false);
-    }
-    render(skin) {
-      skin.drawMenuRightArrow(this);
-    }
-  };
-  var MenuItem = class _MenuItem extends Button {
-    constructor(parent) {
-      super(parent);
-      this.onMenuItemSelected = new Signal();
-      this.onChecked = new Signal();
-      this.onUnChecked = new Signal();
-      this.onCheckChange = new Signal();
-      this._menu = null;
-      this._checkable = false;
-      this._checked = false;
-      this._onStrip = false;
-      this._accelerator = null;
-      this._acceleratorText = "";
-      this._submenuArrow = null;
-      this.setHeight(22);
-      this.setShouldDrawBackground(false);
-      this.setTabable(false);
-      this.setAlignment(Pos.CenterV | Pos.Left);
-    }
-    // Includes accelerator + submenu-arrow widths so the host menu's
-    // shrink-wrap can reserve space for the right-aligned controls. Matches
-    // GWEN MenuItem::SizeToContents (MenuItem.cpp:181).
-    sizeToContents() {
-      super.sizeToContents();
-      if (this._accelerator) {
-        this._accelerator.sizeToContents();
-        this.setWidth(this.width() + this._accelerator.width());
-      }
-      if (this._submenuArrow) {
-        this.setWidth(this.width() + this._submenuArrow.width());
-      }
-    }
-    // ComboBox / MenuItem own the menu they pop up. Canvas's outside-click
-    // close-menus walk skips controls that own a visible menu so a click on
-    // the owner reaches its own toggle handler.
-    ownsOpenMenu() {
-      return this._menu !== null && this._menu.isVisible();
-    }
-    // =====================================================================
-    // Checkable state
-    // =====================================================================
-    isCheckable() {
-      return this._checkable;
-    }
-    setCheckable(b) {
-      this._checkable = b;
-    }
-    isChecked() {
-      return this._checked;
-    }
-    setChecked(b) {
-      if (b === this._checked) return;
-      this._checked = b;
-      const info = eventInfo();
-      info.controlCaller = this;
-      this.onCheckChange.emit(info);
-      if (b) this.onChecked.emit(info);
-      else this.onUnChecked.emit(info);
-      this.redraw();
-    }
-    toggleChecked() {
-      this.setChecked(!this._checked);
-    }
-    // =====================================================================
-    // Strip / submenu
-    // =====================================================================
-    setOnStrip(b) {
-      this._onStrip = b;
-    }
-    isOnStrip() {
-      return this._onStrip;
-    }
-    hasMenu() {
-      return this._menu !== null;
-    }
-    // Lazy submenu construction — GWEN creates the Menu on first access so
-    // leaf items don't pay the allocation cost. We parent the submenu to the
-    // canvas so it can float on top of its owning menu's clip region.
-    getMenu() {
-      if (!this._menu) {
-        const canvas = this.getCanvas();
-        this._menu = new Menu(canvas ?? null);
-        this._menu.hide();
-        if (!this._onStrip) {
-          this._submenuArrow = new RightArrow(this);
-          this._submenuArrow.setSize(15, 15);
-          this._submenuArrow.dock(Pos.Right);
-        }
-        this.invalidate();
-      }
-      return this._menu;
-    }
-    isMenuOpen() {
-      return this._menu !== null && this._menu.isVisible();
-    }
-    openMenu() {
-      if (!this._menu) return;
-      if (this._onStrip && this.parent) {
-        for (const sibling of this.parent.children) {
-          if (sibling === this) continue;
-          if (sibling instanceof _MenuItem && sibling.isOnStrip() && sibling.isMenuOpen()) {
-            sibling.closeMenu();
-          }
-        }
-      }
-      this._menu.show();
-      this._menu.bringToFront();
-      const basePos = this.localPosToCanvas({ x: 0, y: 0 });
-      if (this._onStrip) {
-        this._menu.setPos(basePos.x, basePos.y + this.height() + 1);
-      } else {
-        this._menu.setPos(basePos.x + this.width(), basePos.y);
-      }
-    }
-    closeMenu() {
-      if (!this._menu) return;
-      this._menu.close();
-      this._menu.closeAll();
-    }
-    toggleMenu() {
-      if (this.isMenuOpen()) this.closeMenu();
-      else this.openMenu();
-    }
-    // =====================================================================
-    // Accelerator label
-    // =====================================================================
-    setAccelerator(text) {
-      if (this._accelerator) {
-        if (this._acceleratorText) this.removeAccelerator(this._acceleratorText);
-        this._accelerator.dispose();
-        this._accelerator = null;
-        this._acceleratorText = "";
-      }
-      if (!text) return;
-      this._accelerator = new Label(this);
-      this._accelerator.dock(Pos.Right);
-      this._accelerator.setAlignment(Pos.Right | Pos.CenterV);
-      this._accelerator.setMargin(margin(0, 0, 4, 0));
-      this._accelerator.setText(text);
-      this.addAccelerator(text, () => this.acceleratePressed());
-      this._acceleratorText = text;
-    }
-    // Fires the press signal *and* closes any open menus, so a Ctrl+N
-    // shortcut behaves like a click on the item — onPress fires, the
-    // selected event fires, and any menus that were tucking the item
-    // disappear. Overrides Button.acceleratePressed.
-    acceleratePressed() {
-      super.acceleratePressed();
-      this.onPressItem();
-    }
-    // =====================================================================
-    // Mouse — extend Button's left-click with submenu / close-menus logic.
-    // =====================================================================
-    onMouseClickLeft(x, y, pressed) {
-      const wasDepressed = this.isDepressed();
-      super.onMouseClickLeft(x, y, pressed);
-      if (pressed) return;
-      if (!wasDepressed) return;
-      if (!this.isHovered()) return;
-      this.onPressItem();
-    }
-    // Press handler — GWEN spells this `OnPress`; in the TS port we keep
-    // Button's `onPress` signal semantics intact and do the item-specific
-    // work in `onPressItem` invoked from the mouse-up branch above.
-    onPressItem() {
-      if (this.hasMenu()) {
-        this.toggleMenu();
-        return;
-      }
-      if (!this._onStrip) {
-        if (this._checkable) this.toggleChecked();
-        const info = eventInfo();
-        info.controlCaller = this;
-        this.onMenuItemSelected.emit(info);
-        const canvas = this.getCanvas();
-        if (canvas) canvas.closeMenus();
-      }
-    }
-    // =====================================================================
-    // Render
-    // =====================================================================
-    render(skin) {
-      skin.drawMenuItem(this, this.isMenuOpen(), this._checkable && this._checked);
-      if (this._accelerator) {
-        this._accelerator.setTextColorOverride(this.textColor());
-      }
-    }
-  };
-
-  // src/controls/Menu.ts
-  var Menu = class extends ScrollControl {
-    constructor(parent) {
-      super(parent);
-      this.onMenuClosed = new Signal();
-      // Icon gutter is hidden by default — call setShowIconMargin(true) to
-      // reserve a 24px column for menu-item icons. Most menus don't use icons,
-      // so the saved horizontal space tightens the popup.
-      this._disableIconMargin = true;
-      this._deleteOnClose = false;
-      // Floor for sizeToContents; tunable via setMinimumWidth so a
-      // ComboBox can make its popup at least as wide as the combo.
-      this._minimumWidth = 100;
-      this.setBounds(0, 0, 10, 10);
-      this.setPadding(margin(2, 2, 2, 2));
-      this.setDisabled(false);
-      this.setAutoHideBars(true);
-      this.setScroll(false, true);
-      this.hide();
-      this.setKeyboardInputEnabled(false);
-    }
-    // Menus register as menu-components so the canvas's outside-click
-    // close-menus walk leaves clicks-inside-menus alone. Base.isMenuComponent
-    // walks UP the parent chain so descendants (MenuItems, the inner scroll
-    // container) inherit the truthy answer.
-    isMenuComponent() {
-      return true;
-    }
-    // Whether hovering an item in this menu should auto-open its submenu.
-    // Regular menus always do; MenuStrip narrows to "only when the strip
-    // already has another menu open" so the bar isn't twitchy on first
-    // mouse-over.
-    shouldHoverOpenMenu() {
-      return true;
-    }
-    // Hover handler wired by addItem. Fires when the pointer enters a child
-    // MenuItem; we open its submenu (closing siblings first) when the host
-    // menu wants hover-driven opens.
-    onHoverItem(ctrl) {
-      if (!this.shouldHoverOpenMenu()) return;
-      if (!(ctrl instanceof MenuItem)) return;
-      if (ctrl.isMenuOpen()) return;
-      this.closeAll();
-      if (ctrl.hasMenu()) ctrl.openMenu();
-    }
-    // Close-on-outside-click hook called by Canvas. Closes any open submenus
-    // hosted by this menu's items, then hides the menu itself if visible.
-    closeMenus() {
-      super.closeMenus();
-      this.closeAll();
-      if (this.isVisible()) this.close();
-    }
-    // =====================================================================
-    // Configuration
-    // =====================================================================
-    setDisableIconMargin(b) {
-      this._disableIconMargin = b;
-    }
-    // Inverse alias — call setShowIconMargin(true) to reserve a 24px icon
-    // gutter on the left side of every item, false to hide it. Equivalent
-    // to setDisableIconMargin(!b) but reads more naturally at the call site.
-    setShowIconMargin(b) {
-      this._disableIconMargin = !b;
-    }
-    isIconMarginDisabled() {
-      return this._disableIconMargin;
-    }
-    isIconMarginVisible() {
-      return !this._disableIconMargin;
-    }
-    setDeleteOnClose(b) {
-      this._deleteOnClose = b;
-    }
-    shouldDeleteOnClose() {
-      return this._deleteOnClose;
-    }
-    // =====================================================================
-    // Items
-    // =====================================================================
-    addItem(name, icon = "", accelerator = "") {
-      const inner = this.getInnerPanel() ?? this;
-      const item = new MenuItem(inner);
-      item.setPadding(margin(2, 4, 4, 4));
-      item.setText(name);
-      if (icon) item.setImage(icon);
-      if (accelerator) item.setAccelerator(accelerator);
-      item.dock(Pos.Top);
-      item.setTextPadding(margin(this._disableIconMargin ? 0 : 24, 0, 12, 0));
-      item.setAlignment(Pos.CenterV | Pos.Left);
-      item.sizeToContents();
-      item.onHoverEnter.on((e) => this.onHoverItem(e.controlCaller));
-      this.invalidate();
-      return item;
-    }
-    addDivider() {
-      const inner = this.getInnerPanel() ?? this;
-      const d = new MenuDivider(inner);
-      d.dock(Pos.Top);
-      d.setMargin(margin(this._disableIconMargin ? 0 : 24, 0, 4, 0));
-      return d;
-    }
-    clearItems() {
-      const inner = this.getInnerPanel();
-      if (inner) inner.removeAllChildren();
-      this.invalidate();
-    }
-    // =====================================================================
-    // Open / close
-    // =====================================================================
-    open(pos) {
-      this.show();
-      this.bringToFront();
-      const canvas = this.getCanvas();
-      const p = pos ?? canvas?.mousePosition ?? point(0, 0);
-      this.setPos(p.x, p.y);
-    }
-    close() {
-      this.hide();
-      const info = eventInfo();
-      info.controlCaller = this;
-      this.onMenuClosed.emit(info);
-      if (this._deleteOnClose) {
-        const canvas = this.getCanvas();
-        if (canvas && typeof canvas.addDelayedDelete === "function") {
-          canvas.addDelayedDelete(this);
-        }
-      }
-    }
-    // Closes every open submenu reachable through child items (not this
-    // menu itself — matches GWEN Menu::CloseAll, Menu.cpp:100). Hovering a
-    // sibling item inside a popup must NOT hide the popup; only the popup's
-    // own `close()` does that.
-    closeAll() {
-      const inner = this.getInnerPanel();
-      if (!inner) return;
-      for (const c of inner.children) {
-        if (c instanceof MenuItem) c.closeMenu();
-      }
-    }
-    // True when any of this menu's items has its submenu open. Mirrors GWEN
-    // Menu::IsMenuOpen (Menu.cpp:113) — the strip relies on this returning
-    // false when no dropdown is showing, so it can gate hover-driven opens.
-    // The popup-visibility check used to live here but conflated "the popup
-    // is showing" with "a child submenu is open" — wrong for the strip,
-    // which is permanently visible.
-    isMenuOpen() {
-      const inner = this.getInnerPanel();
-      if (!inner) return false;
-      for (const c of inner.children) {
-        if (c instanceof MenuItem && c.isMenuOpen()) return true;
-      }
-      return false;
-    }
-    // =====================================================================
-    // Render
-    // =====================================================================
-    render(skin) {
-      skin.drawMenu(this, this._disableIconMargin);
-    }
-    renderUnder(skin) {
-      super.renderUnder(skin);
-      skin.drawShadow(this);
-    }
-    // =====================================================================
-    // Layout — match upstream by shrink-wrapping height to child sum,
-    // clamped to the canvas bottom so long menus don't spill off-screen.
-    // =====================================================================
-    layout(skin) {
-      this.sizeToContents();
-      const inner = this.getInnerPanel();
-      if (inner) {
-        let h = 0;
-        for (const c of inner.children) {
-          if (!c.isVisible()) continue;
-          h += c.height();
-        }
-        const canvas = this.getCanvas();
-        if (canvas && this.y() + h > canvas.height()) {
-          h = canvas.height() - this.y();
-        }
-        const pad = this.getPadding();
-        this.setSize(this.width(), h + pad.top + pad.bottom);
-      }
-      super.layout(skin);
-    }
-    // GWEN's Menu::Layout walks items once to call each item's SizeToContents
-    // and then picks the widest; LayoutSizeToContents (an auxiliary method)
-    // does the menu-wide width pass. We fold both into one method — called
-    // from layout above — so the visible width always tracks the longest
-    // item's natural width. Minimum width of 100 matches upstream feel.
-    //
-    // ScrollControl.updateScrollBars sets the inner panel to the menu's full
-    // viewport width (no vbar gutter when bars auto-hide and content fits),
-    // so docked items end up exactly menu.width wide. Adding the menu's own
-    // padding here is the only overhead the items don't already account for.
-    sizeToContents() {
-      const inner = this.getInnerPanel();
-      if (!inner) return;
-      let maxW = this._minimumWidth;
-      for (const c of inner.children) {
-        if (!c.isVisible()) continue;
-        if (typeof c.sizeToContents === "function") {
-          c.sizeToContents();
-        }
-        const w = c.width();
-        if (w > maxW) maxW = w;
-      }
-      const pad = this.getPadding();
-      const total = maxW + pad.left + pad.right;
-      if (total !== this.width()) {
-        this.setWidth(total);
-      }
-    }
-    // Floor for sizeToContents — the menu can grow wider than this when
-    // an item demands more space, but it won't shrink below it. ComboBox
-    // sets this to its own width before opening the popup so the menu
-    // is always at least as wide as the combo (matching the OS-native
-    // behaviour); sub-menus and free-standing menus keep the default
-    // 100px floor.
-    setMinimumWidth(w) {
-      this._minimumWidth = Math.max(0, w);
-      this.invalidate();
-    }
-    getMinimumWidth() {
-      return this._minimumWidth;
-    }
-  };
-  var MenuDivider = class extends Base {
-    constructor(parent) {
-      super(parent);
-      this.setHeight(1);
-    }
-    render(skin) {
-      skin.drawMenuDivider(this);
     }
   };
 

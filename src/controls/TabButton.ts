@@ -9,9 +9,18 @@
 
 import { Button } from './Button';
 import { Pos } from '../core/Align';
-import { margin } from '../core/Structures';
+import { margin, type DragAndDropPackage } from '../core/Structures';
 import type { Skin } from '../skin/Skin';
 import type { Base } from './Base';
+
+// Structural shape of the parts of the owning TabControl we read in
+// `dragAndDrop_StartDragging`. Keeps the runtime check decoupled from
+// `TabControl` / `DockedTabControl` so we don't introduce a circular
+// import (TabControl already imports TabButton).
+interface TabControlShape {
+  tabCount?: () => number;
+  getTabStrip?: () => { showsAsHeader?: () => boolean };
+}
 
 export class TabButton extends Button {
   protected _page: Base | null = null;
@@ -65,5 +74,31 @@ export class TabButton extends Button {
 
   override render(skin: Skin): void {
     skin.drawTabButton(this, this.isActive(), this._tabDock);
+  }
+
+  // When this is the only tab in a docked-style TabControl (i.e. one
+  // whose strip plays the title-bar role), promote the drag to a
+  // whole-dock move so the user gets the same outcome as grabbing the
+  // strip's empty area. Without this, "grab the lone tab" and "grab
+  // the title bar" silently produced different package names — same
+  // visual effect for the user (a single tab's TC ends up empty
+  // either way), but inconsistent intermediate state and edge cases
+  // (e.g. drop targets that accept TabWindowMove but not
+  // TabButtonMove). With 2+ tabs the conventional single-tab move
+  // kicks in unchanged.
+  override dragAndDrop_StartDragging(p: DragAndDropPackage, x: number, y: number): boolean {
+    const tc = this._tabControl as unknown as TabControlShape | null;
+    const strip = tc?.getTabStrip?.();
+    if (strip?.showsAsHeader?.() && tc?.tabCount?.() === 1) {
+      p.name = 'TabWindowMove';
+      p.holdoffset = this.canvasPosToLocal({ x, y });
+      p.drawcontrol = tc as unknown as Base;
+      return true;
+    }
+    // Reset to the constructor-configured TabButtonMove (in case a
+    // prior single-tab drag flipped it). Default behaviour: this btn
+    // as drawcontrol.
+    p.name = 'TabButtonMove';
+    return super.dragAndDrop_StartDragging(p, x, y);
   }
 }

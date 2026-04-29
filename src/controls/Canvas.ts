@@ -25,6 +25,7 @@
 //   dependency graph stays acyclic at the value level.
 
 import { Base, type CanvasLike } from './Base';
+import { Menu } from './Menu';
 import type { Skin } from '../skin/Skin';
 import type { WebGL2Renderer } from '../renderer/WebGL2Renderer';
 import { CursorType, color, point, type Color, type Point } from '../core/Structures';
@@ -695,6 +696,19 @@ export class Canvas extends Base implements InputTarget, CanvasLike {
       this.closeMenus();
     }
 
+    // Right-click context menu walk. Done BEFORE the
+    // "no specific hovered" early-return so canvas-level globals fire
+    // on empty-area right-clicks. Walk halts inside an open menu
+    // (`isMenuComponent`), so right-clicking on a menu item doesn't
+    // summon yet another menu.
+    if (button === 2 && pressed && (!hovered || !hovered.isMenuComponent())) {
+      this.tryShowContextMenu(
+        hovered ?? this,
+        this.mousePosition.x,
+        this.mousePosition.y,
+      );
+    }
+
     if (!hovered || !hovered.isVisible() || hovered === this) return false;
     if (button >= MAX_MOUSE_BUTTONS) return false;
 
@@ -794,6 +808,32 @@ export class Canvas extends Base implements InputTarget, CanvasLike {
     if (!hovered || hovered.getCanvas() !== this) return false;
     hovered.onMouseWheeled(val);
     return true;
+  }
+
+  // =====================================================================
+  // Context menus
+  //
+  // Walks from `start` up the parent chain calling
+  // `onContextMenuRequest(x, y)`. The first non-null Menu wins and is
+  // opened at the cursor position. Auto-reparents the menu onto this
+  // canvas so it always draws above everything regardless of how the
+  // user wired it up. Caller-side bubbling: a control that returns
+  // `null` from `onContextMenuRequest` defers to its parent — handy
+  // when the inner control wants the parent's menu, or when a
+  // dynamically-built menu decides to bow out.
+  // =====================================================================
+
+  private tryShowContextMenu(start: Base, x: number, y: number): void {
+    let scan: Base | null = start;
+    while (scan) {
+      const candidate = scan.onContextMenuRequest(x, y);
+      if (candidate instanceof Menu) {
+        if (candidate.parent !== this) candidate.setParent(this);
+        candidate.open(point(x, y));
+        return;
+      }
+      scan = scan.parent;
+    }
   }
 
   inputKey(key: number, pressed: boolean): boolean {

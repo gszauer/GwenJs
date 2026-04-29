@@ -111,6 +111,9 @@ export * from './controls/TreeNode';
 // T208 — ToolBarButton + ToolBarStrip.
 export * from './controls/ToolBar';
 
+// ActionBar — flexible toolbar (horizontal quick-action / vertical tool palette).
+export * from './controls/ActionBar';
+
 // T209 — CollapsibleCategory (expandable category with toggle header + item rows).
 export * from './controls/CollapsibleCategory';
 

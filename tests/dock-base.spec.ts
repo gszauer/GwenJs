@@ -703,4 +703,61 @@ test.describe('T309 DockBase', () => {
     expect(result.afterA.t1Hidden).toBe(false);
     expect(result.beforeA).toEqual(result.afterA);
   });
+
+  // =========================================================================
+  // 23. Single-tab drag promotion: when a docked panel has exactly one
+  //     tab, grabbing the tab fires TabWindowMove (whole-dock) rather
+  //     than TabButtonMove (single tab). Adding a second tab restores
+  //     the conventional single-tab drag behaviour. Matches the
+  //     "drag the strip's empty area" gesture so users get one
+  //     consistent outcome regardless of where on the strip they grab.
+  // =========================================================================
+
+  test('23 — lone tab in a docked TC drags as TabWindowMove; multi-tab drags as TabButtonMove', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const dock = new G.DockBase(canvas);
+      dock.setBounds(0, 0, 400, 300);
+      const tc = dock.getLeft().getTabControl();
+
+      const t1 = tc.addPage('Lone');
+      const pkg1 = {
+        name: 'TabButtonMove', userdata: null, draggable: true,
+        drawcontrol: null, holdoffset: { x: 0, y: 0 },
+      };
+      t1.dragAndDrop_StartDragging(pkg1, 0, 0);
+      const single = { name: pkg1.name, drawcontrolIsTC: pkg1.drawcontrol === tc };
+
+      // Add a second tab — single-tab promotion should now stop
+      // applying. Each tab drag falls back to TabButtonMove.
+      const t2 = tc.addPage('Other');
+      const pkg2 = {
+        name: 'TabWindowMove', userdata: null, draggable: true,
+        drawcontrol: null, holdoffset: { x: 0, y: 0 },
+      };
+      t1.dragAndDrop_StartDragging(pkg2, 0, 0);
+      const multi = { name: pkg2.name, drawcontrolIsT1: pkg2.drawcontrol === t1 };
+
+      // Sanity: dragging t2 in the multi-tab state also produces
+      // TabButtonMove (with drawcontrol = t2).
+      const pkg3 = {
+        name: 'TabButtonMove', userdata: null, draggable: true,
+        drawcontrol: null, holdoffset: { x: 0, y: 0 },
+      };
+      t2.dragAndDrop_StartDragging(pkg3, 0, 0);
+      const multi2 = { name: pkg3.name, drawcontrolIsT2: pkg3.drawcontrol === t2 };
+
+      dock.dispose();
+      return { single, multi, multi2 };
+    });
+    // Lone tab → whole-dock drag.
+    expect(result.single.name).toBe('TabWindowMove');
+    expect(result.single.drawcontrolIsTC).toBe(true);
+    // Two tabs → single-tab drag.
+    expect(result.multi.name).toBe('TabButtonMove');
+    expect(result.multi.drawcontrolIsT1).toBe(true);
+    expect(result.multi2.name).toBe('TabButtonMove');
+    expect(result.multi2.drawcontrolIsT2).toBe(true);
+  });
 });

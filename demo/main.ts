@@ -153,6 +153,28 @@ const statusBar = new Gwen.StatusBar(canvas);
 statusBar.setText(`GwenJs Unit Test — v${Gwen.VERSION}`);
 
 // ---------------------------------------------------------------------------
+// Canvas-level global right-click menu — Cut / Copy / Paste. Fires on
+// any right-click whose hovered control's `onContextMenuRequest` chain
+// doesn't override (the bubble walks all the way up to the canvas).
+// Specific demos (e.g. the RightClick demo's panel + button) override
+// at their own level; everything else falls back to this.
+// ---------------------------------------------------------------------------
+
+const globalMenu = new Gwen.Menu(canvas);
+{
+  const cut = globalMenu.addItem('Cut');
+  cut.setAccelerator('Ctrl+X');
+  cut.onMenuItemSelected.on(() => log('Global menu: Cut'));
+  const copy = globalMenu.addItem('Copy');
+  copy.setAccelerator('Ctrl+C');
+  copy.onMenuItemSelected.on(() => log('Global menu: Copy'));
+  const paste = globalMenu.addItem('Paste');
+  paste.setAccelerator('Ctrl+V');
+  paste.onMenuItemSelected.on(() => log('Global menu: Paste'));
+}
+canvas.setContextMenu(globalMenu);
+
+// ---------------------------------------------------------------------------
 // DockBase — root four-edge dockable container, mirroring GWEN UnitTest.
 // The CollapsibleList sidebar (left) and Output log (bottom) live as tabs
 // inside docked tab controls; their tab buttons can be torn off and
@@ -824,6 +846,246 @@ addDemo(containersCat, 'TabControl', (p) => {
   }
 });
 
+addDemo(containersCat, 'ActionBar', (p) => {
+  // Procedurally-drawn tool icons — keeps the demo asset-free.
+  const makeIcon = (paint: (g: CanvasRenderingContext2D) => void): Gwen.Texture => {
+    const c = document.createElement('canvas');
+    c.width = 20;
+    c.height = 20;
+    const g = c.getContext('2d')!;
+    g.lineWidth = 1.6;
+    g.strokeStyle = '#202020';
+    g.fillStyle = '#202020';
+    paint(g);
+    const tex = Gwen.texture('actionbar-icon');
+    renderer.loadTextureFromSource(tex, c);
+    return tex;
+  };
+
+  const moveIcon = makeIcon((g) => {
+    // 4-arrow cross
+    g.beginPath();
+    g.moveTo(10, 2); g.lineTo(10, 18);
+    g.moveTo(2, 10); g.lineTo(18, 10);
+    g.stroke();
+    // arrowheads
+    g.beginPath();
+    g.moveTo(10, 2); g.lineTo(7, 5); g.moveTo(10, 2); g.lineTo(13, 5);
+    g.moveTo(10, 18); g.lineTo(7, 15); g.moveTo(10, 18); g.lineTo(13, 15);
+    g.moveTo(2, 10); g.lineTo(5, 7); g.moveTo(2, 10); g.lineTo(5, 13);
+    g.moveTo(18, 10); g.lineTo(15, 7); g.moveTo(18, 10); g.lineTo(15, 13);
+    g.stroke();
+  });
+  const brushIcon = makeIcon((g) => {
+    // Brush stroke + handle
+    g.beginPath();
+    g.moveTo(3, 17); g.lineTo(11, 9);
+    g.lineWidth = 3;
+    g.stroke();
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(11, 9); g.lineTo(17, 3);
+    g.stroke();
+  });
+  const eraseIcon = makeIcon((g) => {
+    g.strokeRect(4, 6, 12, 8);
+    g.beginPath();
+    g.moveTo(7, 6); g.lineTo(7, 14);
+    g.moveTo(13, 6); g.lineTo(13, 14);
+    g.stroke();
+  });
+  const textIcon = makeIcon((g) => {
+    g.font = 'bold 16px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('A', 10, 11);
+  });
+  const boldIcon = makeIcon((g) => {
+    g.font = 'bold 14px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('B', 10, 11);
+  });
+  const italicIcon = makeIcon((g) => {
+    g.font = 'italic 14px serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('I', 10, 11);
+  });
+  const underlineIcon = makeIcon((g) => {
+    g.font = '14px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('U', 10, 9);
+    g.beginPath();
+    g.moveTo(6, 16); g.lineTo(14, 16);
+    g.stroke();
+  });
+
+  // Six more icons for the wider Photoshop-style palette.
+  const lassoIcon = makeIcon((g) => {
+    g.beginPath();
+    g.moveTo(4, 14);
+    g.bezierCurveTo(2, 6, 10, 2, 14, 6);
+    g.bezierCurveTo(18, 10, 14, 16, 8, 16);
+    g.lineTo(6, 18);
+    g.stroke();
+  });
+  const cropIcon = makeIcon((g) => {
+    g.beginPath();
+    g.moveTo(5, 2); g.lineTo(5, 16); g.lineTo(18, 16);
+    g.moveTo(2, 5); g.lineTo(15, 5); g.lineTo(15, 18);
+    g.stroke();
+  });
+  const fillIcon = makeIcon((g) => {
+    g.beginPath();
+    g.moveTo(6, 5); g.lineTo(15, 14);
+    g.lineTo(11, 18); g.lineTo(2, 9); g.closePath();
+    g.fill();
+    g.beginPath();
+    g.arc(17, 8, 2, 0, Math.PI * 2);
+    g.fill();
+  });
+  const shapeIcon = makeIcon((g) => {
+    g.strokeRect(3, 3, 8, 8);
+    g.beginPath();
+    g.arc(14, 14, 4, 0, Math.PI * 2);
+    g.stroke();
+  });
+  const eyedropperIcon = makeIcon((g) => {
+    g.beginPath();
+    g.moveTo(3, 17); g.lineTo(11, 9);
+    g.moveTo(11, 9); g.lineTo(13, 7); g.lineTo(15, 9); g.lineTo(13, 11);
+    g.closePath();
+    g.fillStyle = '#202020';
+    g.fill();
+    g.beginPath();
+    g.moveTo(13, 11); g.lineTo(17, 7);
+    g.lineWidth = 2;
+    g.stroke();
+  });
+  const handIcon = makeIcon((g) => {
+    g.beginPath();
+    g.moveTo(5, 16); g.lineTo(5, 9);
+    g.lineTo(7, 9); g.lineTo(7, 5);
+    g.lineTo(9, 5); g.lineTo(9, 9);
+    g.lineTo(11, 9); g.lineTo(11, 6);
+    g.lineTo(13, 6); g.lineTo(13, 10);
+    g.lineTo(15, 10); g.lineTo(15, 13);
+    g.lineTo(13, 17); g.lineTo(7, 17); g.closePath();
+    g.stroke();
+  });
+
+  // ── Vertical single-column "tool palette" on the left, like Photoshop ──
+  // Radio mode keeps exactly one tool selected at a time.
+  const tools = new Gwen.ActionBar(p);
+  tools.setVertical(true);
+  tools.setBounds(20, 60, 32, 220);
+  tools.setRadioMode(true);
+
+  const move = tools.addButton('', moveIcon);
+  move.setToolTip('Move');
+  move.setToggleState(true);              // initial active tool
+  move.onPress.on(() => log('Tool: Move'));
+  const brush = tools.addButton('', brushIcon);
+  brush.setToolTip('Brush');
+  brush.onPress.on(() => log('Tool: Brush'));
+  const erase = tools.addButton('', eraseIcon);
+  erase.setToolTip('Eraser');
+  erase.onPress.on(() => log('Tool: Eraser'));
+  tools.addSeparator();
+  const text = tools.addButton('', textIcon);
+  text.setToolTip('Text');
+  text.onPress.on(() => log('Tool: Text'));
+
+  // ── Vertical two-column palette right next to it ───────────────────
+  const tools2 = new Gwen.ActionBar(p);
+  tools2.setVertical(true);
+  tools2.setColumns(2);
+  tools2.setBounds(60, 60, 60, 220);
+  tools2.setRadioMode(true);
+  const t2Move = tools2.addButton('', moveIcon);
+  t2Move.setToolTip('Move');
+  t2Move.setToggleState(true);
+  t2Move.onPress.on(() => log('Palette2: Move'));
+  const t2Lasso = tools2.addButton('', lassoIcon);
+  t2Lasso.setToolTip('Lasso');
+  t2Lasso.onPress.on(() => log('Palette2: Lasso'));
+  const t2Crop = tools2.addButton('', cropIcon);
+  t2Crop.setToolTip('Crop');
+  t2Crop.onPress.on(() => log('Palette2: Crop'));
+  const t2Eyedrop = tools2.addButton('', eyedropperIcon);
+  t2Eyedrop.setToolTip('Eyedropper');
+  t2Eyedrop.onPress.on(() => log('Palette2: Eyedropper'));
+  tools2.addSeparator();
+  const t2Brush = tools2.addButton('', brushIcon);
+  t2Brush.setToolTip('Brush');
+  t2Brush.onPress.on(() => log('Palette2: Brush'));
+  const t2Fill = tools2.addButton('', fillIcon);
+  t2Fill.setToolTip('Fill');
+  t2Fill.onPress.on(() => log('Palette2: Fill'));
+  const t2Erase = tools2.addButton('', eraseIcon);
+  t2Erase.setToolTip('Eraser');
+  t2Erase.onPress.on(() => log('Palette2: Eraser'));
+  const t2Shape = tools2.addButton('', shapeIcon);
+  t2Shape.setToolTip('Shape');
+  t2Shape.onPress.on(() => log('Palette2: Shape'));
+  tools2.addSeparator();
+  const t2Text = tools2.addButton('', textIcon);
+  t2Text.setToolTip('Text');
+  t2Text.onPress.on(() => log('Palette2: Text'));
+  const t2Hand = tools2.addButton('', handIcon);
+  t2Hand.setToolTip('Hand');
+  t2Hand.onPress.on(() => log('Palette2: Hand'));
+
+  // ── Horizontal "quick action" bar on the top, like Word ──────────
+  // Bold/Italic/Underline are independent toggles (no radio mode); the
+  // dropdown + Undo/Redo round out the bar.
+  const quick = new Gwen.ActionBar(p);
+  quick.setBounds(130, 20, 440, 32);
+
+  const bold = quick.addButton('', boldIcon);
+  bold.setIsToggle(true);
+  bold.setToolTip('Bold');
+  bold.onPress.on(() => log(`Bold: ${bold.getToggleState() ? 'on' : 'off'}`));
+
+  const italic = quick.addButton('', italicIcon);
+  italic.setIsToggle(true);
+  italic.setToolTip('Italic');
+  italic.onPress.on(() => log(`Italic: ${italic.getToggleState() ? 'on' : 'off'}`));
+
+  const underline = quick.addButton('', underlineIcon);
+  underline.setIsToggle(true);
+  underline.setToolTip('Underline');
+  underline.onPress.on(() => log(`Underline: ${underline.getToggleState() ? 'on' : 'off'}`));
+
+  quick.addSeparator();
+
+  const fontCombo = new Gwen.ComboBox(quick);
+  fontCombo.setSize(140, 22);
+  for (const f of ['Helvetica', 'Times', 'Courier', 'Comic Sans']) fontCombo.addItem(f, f);
+  fontCombo.selectItemByName('Helvetica', false);
+  quick.addItem(fontCombo);
+  fontCombo.onSelection.on(() => log(`Font: ${fontCombo.getSelectedItem()?.getText()}`));
+
+  quick.addSeparator();
+
+  const undoBtn = quick.addButton('Undo');
+  undoBtn.setSize(56, 28);
+  undoBtn.onPress.on(() => log('Action: Undo'));
+  const redoBtn = quick.addButton('Redo');
+  redoBtn.setSize(56, 28);
+  redoBtn.onPress.on(() => log('Action: Redo'));
+
+  // Caption beside the canvas area so the user knows what the demo is about.
+  const note = new Gwen.Label(p);
+  note.setText('Single-column palette ↙   Two-column palette ↙   Horizontal quick-action bar ↑');
+  note.setBounds(130, 60, 480, 18);
+  const note2 = new Gwen.Label(p);
+  note2.setText('Both palettes are in radio mode — only one tool active at a time.');
+  note2.setBounds(130, 78, 480, 18);
+});
+
 addDemo(containersCat, 'ScrollControl', (p) => {
   const sc = new Gwen.ScrollControl(p);
   sc.setBounds(20, 20, 300, 200);
@@ -936,6 +1198,96 @@ addDemo(nonStandardCat, 'CollapsibleList', (p) => {
   cat3.add('Gold');
   cat3.add('Silver');
   cat3.add('Copper');
+});
+
+addDemo(nonStandardCat, 'RightClick', (p) => {
+  // Right-click menus bubble from the hovered control up the parent
+  // chain; the first control that returns a Menu wins. This demo wires
+  // four layers so you can feel each rule:
+  //
+  //   1. Panel-level "global" — right-click anywhere on the panel
+  //      with no override gets these items.
+  //   2. A specific button overrides with its own menu.
+  //   3. A dynamic menu built on demand via `onContextMenuRequest`.
+  //   4. A label that explicitly returns null from its hook to defer
+  //      to the panel's "global" — confirms the bubble rule.
+  //
+  // For an APP-wide menu, replace `p` with `canvas` — same code, just
+  // a different attachment point.
+
+  // ── 1. Panel-level "global" ───────────────────────────────────────
+  const panelMenu = new Gwen.Menu(canvas);
+  panelMenu.addItem('Cut').setAccelerator('Ctrl+X');
+  panelMenu.addItem('Copy').setAccelerator('Ctrl+C');
+  panelMenu.addItem('Paste').setAccelerator('Ctrl+V');
+  panelMenu.addDivider();
+  // Submenu — same pattern as the top MenuStrip.
+  const panelMore = panelMenu.addItem('More');
+  panelMore.getMenu().setShowIconMargin(true);
+  panelMore.getMenu().addItem('First');
+  panelMore.getMenu().addItem('Second');
+  panelMore.getMenu().addItem('Third');
+  panelMenu.addDivider();
+  panelMenu.addItem('About').onMenuItemSelected.on(() => log('Right-click: About selected'));
+  // Wire selections to the demo log.
+  for (const name of ['Cut', 'Copy', 'Paste']) {
+    panelMenu.getInnerPanel()?.children.forEach((c: Gwen.Base) => {
+      if (c instanceof Gwen.MenuItem && c.getText() === name) {
+        c.onMenuItemSelected.on(() => log(`Panel menu: ${name}`));
+      }
+    });
+  }
+  p.setContextMenu(panelMenu);
+
+  // ── 2. Button with its own custom right-click menu ────────────────
+  const btn = new Gwen.Button(p);
+  btn.setText('Right-click me (custom)');
+  btn.setBounds(20, 20, 220, 28);
+  btn.onPress.on(() => log('Button: left-clicked'));
+
+  const btnMenu = new Gwen.Menu(canvas);
+  btnMenu.addItem('Run').onMenuItemSelected.on(() => log('Button menu: Run'));
+  btnMenu.addItem('Configure...').onMenuItemSelected.on(() => log('Button menu: Configure'));
+  btnMenu.addDivider();
+  btnMenu.addItem('Disable').onMenuItemSelected.on(() => log('Button menu: Disable'));
+  btn.setContextMenu(btnMenu);
+
+  // ── 3. Dynamic menu via onContextMenuRequest ──────────────────────
+  const dyn = new Gwen.Label(p);
+  dyn.setText('Right-click me (dynamic, includes click position)');
+  dyn.setBounds(20, 60, 360, 22);
+  // Labels have mouseInputEnabled=false by default — right-clicks pass
+  // straight through to the parent. Turn input on so this label
+  // actually catches the right-click and the override below fires.
+  dyn.setMouseInputEnabled(true);
+  // Override per-instance — builds a fresh Menu each time, with an
+  // item that reports the click location. Demonstrates the "build on
+  // demand" pattern (e.g. for a viewport that wants commands like
+  // "Frame here", "Insert at this point", etc.).
+  (dyn as unknown as { onContextMenuRequest: (x: number, y: number) => Gwen.Base | null }).onContextMenuRequest = (x: number, y: number) => {
+    const m = new Gwen.Menu(canvas);
+    m.setDeleteOnClose(true);
+    m.addItem(`Clicked at (${x}, ${y})`);
+    m.addDivider();
+    m.addItem('Action A').onMenuItemSelected.on(() => log(`Dynamic A @ (${x}, ${y})`));
+    m.addItem('Action B').onMenuItemSelected.on(() => log(`Dynamic B @ (${x}, ${y})`));
+    return m;
+  };
+
+  // ── 4. Label that defers to the panel via onContextMenuRequest=null
+  const deferred = new Gwen.Label(p);
+  deferred.setText('Right-click me (defers to the panel\'s menu)');
+  deferred.setBounds(20, 90, 360, 22);
+  deferred.setMouseInputEnabled(true);
+  (deferred as unknown as { onContextMenuRequest: (x: number, y: number) => Gwen.Base | null }).onContextMenuRequest = () => null;
+
+  // Caption explaining what to do.
+  const note = new Gwen.Label(p);
+  note.setText('Right-click anywhere on this panel for the panel-level menu.');
+  note.setBounds(20, 130, 480, 18);
+  const note2 = new Gwen.Label(p);
+  note2.setText('Selections log to the Output panel.');
+  note2.setBounds(20, 150, 480, 18);
 });
 
 addDemo(nonStandardCat, 'ColorPicker', (p) => {
