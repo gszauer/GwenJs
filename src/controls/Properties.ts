@@ -511,7 +511,12 @@ export class PropertyColorSelector extends PropertyText {
 
 // ---------------------------------------------------------------------------
 // PropertyFile — file-picker property editor. Wraps a FilePicker docked
-// Fill; canonical value is the file name string. Ports
+// Fill. The picker holds a real `File` blob for the current selection
+// (accessible via `getFile()`); the canonical string value used by the
+// PropertyBase contract is `file.name`, since the grid serialises rows
+// as strings. Calling `setPropertyValue('foo.txt')` rehydrates the
+// display name only — the bytes are not recoverable from a name, so
+// `getFile()` returns null until the user re-picks. Ports
 // `Gwen::Controls::Property::File` from include/Gwen/Controls/Property/File.h.
 // ---------------------------------------------------------------------------
 
@@ -528,11 +533,18 @@ export class PropertyFile extends PropertyBase {
       info.string = this.getPropertyValue();
       this.onChange.emit(info);
     });
-    this.setHeight(18);
+    // 22 to give the picker's Browse… button enough vertical room; the
+    // standard 18-tall row would clip the button label.
+    this.setHeight(22);
   }
 
   getFilePicker(): FilePicker {
     return this._picker;
+  }
+
+  /** Convenience — same as `getFilePicker().getFile()`. */
+  getFile(): File | null {
+    return this._picker.getFile();
   }
 
   override getPropertyValue(): string {
@@ -540,7 +552,7 @@ export class PropertyFile extends PropertyBase {
   }
 
   override setPropertyValue(v: string, _fireEvents = true): void {
-    this._picker.setFileName(v);
+    this._picker.setValue(v);
   }
 
   override isEditing(): boolean {

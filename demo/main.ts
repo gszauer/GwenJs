@@ -429,6 +429,45 @@ addDemo(nonInteractiveCat, 'ImagePanel', (p) => {
   const redBlock = new Gwen.ColorDisplay(p);
   redBlock.setColor(Gwen.color(255, 0, 0, 255));
   redBlock.setBounds(330, 80, 96, 96);
+
+  // Custom-image slot — populated by the FilePicker below. Starts blank
+  // (a 96×96 outline rectangle) until the user picks an image file.
+  const customFrame = new Gwen.Rectangle(p);
+  customFrame.setBounds(440, 80, 96, 96);
+  customFrame.setColor(Gwen.color(80, 80, 80, 255));
+
+  const customPanel = new Gwen.ImagePanel(p);
+  customPanel.setBounds(440, 80, 96, 96);
+
+  const hint = new Gwen.Label(p);
+  hint.setText('Load a custom image:');
+  hint.setBounds(220, 200, 200, 18);
+
+  const picker = new Gwen.FilePicker(p);
+  picker.setBounds(220, 222, 316, 22);
+  picker.setAccept('image/*');
+
+  picker.onFileChanged.on(() => {
+    const f = picker.getFile();
+    if (!f) {
+      // Clearing the picker resets the slot to its blank state. The
+      // empty Texture (width=height=0) renders as nothing; the frame
+      // rectangle behind it shows through.
+      customPanel.setTexture(Gwen.texture());
+      log('ImagePanel: cleared custom image');
+      return;
+    }
+    const url = URL.createObjectURL(f);
+    Gwen.ImagePanel.loadFromURL(url, renderer)
+      .then((tex) => {
+        customPanel.setTexture(tex);
+        log(`ImagePanel: loaded ${f.name} (${tex.width}×${tex.height})`);
+      })
+      .catch((err: Error) => {
+        log(`ImagePanel: failed to load ${f.name} — ${err.message}`);
+      })
+      .finally(() => URL.revokeObjectURL(url));
+  });
 });
 
 addDemo(nonInteractiveCat, 'StatusBar', (p) => {
@@ -753,6 +792,13 @@ addDemo(containersCat, 'Properties', (p) => {
     cb.addItem('Five Birds', 'five');
     const comboRow = item.addRow('ComboBox', combo, 'one');
     comboRow.onChange.on(() => log(`ComboBox: ${combo.getPropertyValue()}`));
+
+    const fileProp = new Gwen.PropertyFile(item);
+    const fileRow = item.addRow('File', fileProp);
+    fileRow.onChange.on(() => {
+      const f = fileProp.getFile();
+      log(`File: ${f ? `${f.name} (${f.size} bytes)` : '(cleared)'}`);
+    });
   }
   {
     // Item Three — deliberately tall enough that expanding it pushes
@@ -899,6 +945,42 @@ addDemo(nonStandardCat, 'ColorPicker', (p) => {
 
   const hsv = new Gwen.HSVColorPicker(p);
   hsv.setBounds(300, 20, 256, 180);
+});
+
+addDemo(nonStandardCat, 'FilePicker', (p) => {
+  const intro = new Gwen.Label(p);
+  intro.setText('Pick a file to see its name, size, and MIME type.');
+  intro.setBounds(20, 20, 500, 18);
+
+  const picker = new Gwen.FilePicker(p);
+  picker.setBounds(20, 50, 360, 22);
+
+  const info = new Gwen.Label(p);
+  info.setText('No file selected.');
+  info.setBounds(20, 84, 500, 18);
+
+  picker.onFileChanged.on(() => {
+    const f = picker.getFile();
+    if (!f) {
+      info.setText('No file selected.');
+      log('FilePicker: cleared');
+      return;
+    }
+    const kb = (f.size / 1024).toFixed(1);
+    info.setText(`${f.name} — ${kb} KB — ${f.type || 'unknown type'}`);
+    log(`FilePicker: ${f.name} (${f.size} bytes, ${f.type || 'unknown'})`);
+  });
+
+  // Properties grid integration — PropertyFile uses the same FilePicker
+  // internally and exposes the selected file through `getFile()`.
+  const grid = new Gwen.Properties(p);
+  grid.setBounds(20, 130, 500, 60);
+  const propRow = grid.addRow('Attachment', new Gwen.PropertyFile(grid));
+  propRow.onChange.on(() => {
+    const prop = propRow.getProperty() as Gwen.PropertyFile | null;
+    const f = prop ? prop.getFile() : null;
+    log(`PropertyFile: ${f ? f.name : '(cleared)'}`);
+  });
 });
 
 // ---------------------------------------------------------------------------

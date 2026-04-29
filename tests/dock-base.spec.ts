@@ -481,4 +481,226 @@ test.describe('T309 DockBase', () => {
     });
     expect(threw).toBe(false);
   });
+
+  // =========================================================================
+  // 19. Regression: dragging the source's current tab to a new edge keeps
+  //     the moved page visible in its new dock. The source TC's stale
+  //     `_currentButton` cleanup used to call `oldPage.hide()` even when
+  //     the page had been reparented to another inner panel, leaving the
+  //     destination dock visibly empty until re-docked.
+  // =========================================================================
+
+  test('19 — dragging current tab from a multi-tab dock keeps moved page visible in destination', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+
+      // Source dock with TWO tabs; T1 is the current selection.
+      const srcDock = new G.DockBase(canvas);
+      srcDock.setBounds(0, 0, 400, 300);
+      const srcChild = srcDock.getLeft();
+      const srcTc = srcChild.getTabControl();
+      const t1 = srcTc.addPage('T1');
+      const t2 = srcTc.addPage('T2');
+      // addPage selects the first tab automatically; press T1 explicitly
+      // to make the bug repro deterministic if that ever changes.
+      (srcTc as any).onTabPressed(t1);
+
+      // Target dock with no children — drop near top edge to create one.
+      const tgtDock = new G.DockBase(canvas);
+      tgtDock.setBounds(0, 0, 200, 200);
+
+      const pkg = {
+        name: 'TabButtonMove', userdata: null, draggable: true,
+        drawcontrol: t1, holdoffset: { x: 0, y: 0 },
+      };
+      // y = 5 → near top edge (y/h = 0.025 < 0.3, < left/right/bottom).
+      tgtDock.dragAndDrop_HandleDrop(pkg, 100, 5);
+
+      const dropChild = (tgtDock as any)._top;
+      const dstTc = dropChild ? dropChild.getTabControl() : null;
+      const dstPage = t1.getPage();
+
+      const r = {
+        dstTabCount: dstTc ? dstTc.tabCount() : -1,
+        dstCurrent: dstTc ? dstTc.getCurrentButton() === t1 : false,
+        dstPageHidden: dstPage ? dstPage.hidden() : null,
+        srcCurrent: srcTc.getCurrentButton() === t2,
+        srcPageHidden: t2.getPage() ? t2.getPage().hidden() : null,
+      };
+
+      srcDock.dispose();
+      tgtDock.dispose();
+      return r;
+    });
+    expect(result.dstTabCount).toBe(1);
+    expect(result.dstCurrent).toBe(true);
+    // The moved page must be visible in its new home — this is the bug.
+    expect(result.dstPageHidden).toBe(false);
+    // Source promoted its remaining tab to current.
+    expect(result.srcCurrent).toBe(true);
+    expect(result.srcPageHidden).toBe(false);
+  });
+
+  // =========================================================================
+  // 20. Regression: TabWindowMove (whole-dock drag) preserves the source's
+  //     current selection in the destination. moveTabsTo's per-tab loop
+  //     attaches in array order; without explicitly re-pressing the
+  //     source's previous current at the end, the *first* tab wins.
+  // =========================================================================
+
+  test('20 — TabWindowMove preserves source current selection in destination', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+
+      // Source dock with two tabs; explicitly press T2 so it's current.
+      const srcDock = new G.DockBase(canvas);
+      srcDock.setBounds(0, 0, 400, 300);
+      const srcChild = srcDock.getLeft();
+      const srcTc = srcChild.getTabControl();
+      const t1 = srcTc.addPage('T1');
+      const t2 = srcTc.addPage('T2');
+      (srcTc as any).onTabPressed(t2);
+
+      // Drop the SOURCE TC (TabWindowMove) onto the target's bottom edge.
+      const tgtDock = new G.DockBase(canvas);
+      tgtDock.setBounds(0, 0, 200, 200);
+
+      const pkg = {
+        name: 'TabWindowMove', userdata: null, draggable: true,
+        drawcontrol: srcTc, holdoffset: { x: 0, y: 0 },
+      };
+      // y = 195 → near bottom edge.
+      tgtDock.dragAndDrop_HandleDrop(pkg, 100, 195);
+
+      const dropChild = (tgtDock as any)._bottom;
+      const dstTc = dropChild ? dropChild.getTabControl() : null;
+      const r = {
+        dstTabCount: dstTc ? dstTc.tabCount() : -1,
+        dstCurrentIsT2: dstTc ? dstTc.getCurrentButton() === t2 : false,
+        t1Hidden: t1.getPage() ? t1.getPage().hidden() : null,
+        t2Hidden: t2.getPage() ? t2.getPage().hidden() : null,
+      };
+
+      srcDock.dispose();
+      tgtDock.dispose();
+      return r;
+    });
+    expect(result.dstTabCount).toBe(2);
+    // Source's current tab (T2) must remain current in the destination.
+    expect(result.dstCurrentIsT2).toBe(true);
+    // T2's page is the visible one; T1 sits hidden behind it.
+    expect(result.t2Hidden).toBe(false);
+    expect(result.t1Hidden).toBe(true);
+  });
+
+  // =========================================================================
+  // 21. Single-tab drop onto a dock that already has a live current tab:
+  //     the dragged tab should be promoted to active (user intent), and
+  //     the previously-current tab's page hides cleanly.
+  // =========================================================================
+
+  test('21 — TabButtonMove onto a populated dock promotes the dragged tab to active', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+
+      const srcDock = new G.DockBase(canvas);
+      srcDock.setBounds(0, 0, 400, 300);
+      const srcTc = srcDock.getLeft().getTabControl();
+      const tNew = srcTc.addPage('Incoming');
+
+      // The drop target is a child dock (not the root) — only child
+      // docks own a `_dockedTabControl`, so a Fill drop has somewhere
+      // to land.
+      const tgtRoot = new G.DockBase(canvas);
+      tgtRoot.setBounds(0, 0, 200, 200);
+      const tgtChild = tgtRoot.getRight();
+      const tgtTc = tgtChild.getTabControl();
+      const tExisting = tgtTc.addPage('Existing');
+
+      const pkg = {
+        name: 'TabButtonMove', userdata: null, draggable: true,
+        drawcontrol: tNew, holdoffset: { x: 0, y: 0 },
+      };
+      // Drop in the center of tgtChild → Pos.Fill → attaches to tgtTc.
+      const cb = tgtChild.getBounds();
+      const cx = cb.x + cb.w / 2;
+      const cy = cb.y + cb.h / 2;
+      tgtChild.dragAndDrop_HandleDrop(pkg, cx, cy);
+
+      const r = {
+        currentIsIncoming: tgtTc.getCurrentButton() === tNew,
+        incomingPageHidden: tNew.getPage() ? tNew.getPage().hidden() : null,
+        existingPageHidden: tExisting.getPage() ? tExisting.getPage().hidden() : null,
+      };
+
+      srcDock.dispose();
+      tgtRoot.dispose();
+      return r;
+    });
+    expect(result.currentIsIncoming).toBe(true);
+    expect(result.incomingPageHidden).toBe(false);
+    expect(result.existingPageHidden).toBe(true);
+  });
+
+  // =========================================================================
+  // 22. Stale onPress subscriptions don't corrupt prior-host TC state.
+  //     A tab moved A → B carries an A-side onPress subscription that fires
+  //     when clicked in B; the defensive parent-check in
+  //     TabControl.onTabPressed must short-circuit before A mutates its
+  //     own current selection or hides one of A's local pages.
+  // =========================================================================
+
+  test('22 — clicking a moved tab does not touch its previous TC state', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+
+      // A: holds T1 (current) + T2.
+      const dockA = new G.DockBase(canvas);
+      dockA.setBounds(0, 0, 400, 300);
+      const tcA = dockA.getLeft().getTabControl();
+      const t1 = tcA.addPage('T1');
+      const t2 = tcA.addPage('T2');
+      (tcA as any).onTabPressed(t1);
+
+      // B: empty new dock; we'll move T2 there.
+      const dockB = new G.DockBase(canvas);
+      dockB.setBounds(0, 0, 200, 200);
+
+      const pkg = {
+        name: 'TabButtonMove', userdata: null, draggable: true,
+        drawcontrol: t2, holdoffset: { x: 0, y: 0 },
+      };
+      dockB.dragAndDrop_HandleDrop(pkg, 5, 100); // near left → creates B.left
+
+      // Before clicking: A has T1 current and T1's page visible.
+      const beforeA = {
+        cur: tcA.getCurrentButton() === t1,
+        t1Hidden: t1.getPage()?.hidden(),
+      };
+
+      // Now click T2 (which lives in B). The stale A-side onPress
+      // subscription would fire too — without the defensive
+      // parent-check, it would hide T1's page in A.
+      t2.onPress.emit({
+        controlCaller: t2, control: null, data: null, string: '', point: { x: 0, y: 0 }, integer: 0,
+      });
+
+      const afterA = {
+        cur: tcA.getCurrentButton() === t1,
+        t1Hidden: t1.getPage()?.hidden(),
+      };
+
+      dockA.dispose();
+      dockB.dispose();
+      return { beforeA, afterA };
+    });
+    // A must look identical before and after the click on B's tab.
+    expect(result.afterA.cur).toBe(true);
+    expect(result.afterA.t1Hidden).toBe(false);
+    expect(result.beforeA).toEqual(result.afterA);
+  });
 });

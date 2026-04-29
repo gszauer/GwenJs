@@ -119,11 +119,18 @@ Each row is one unit of work. The orchestrator picks the lowest-ID `pending` tas
 | T607 | `README.md` - GitHub front page                               | T605, T606        | done    |
 | T608 | Visual regression suite - golden per control, CI-ready        | T600              | partial - baselines for canvas default + renderer smoke + skin atlas + WindowControl committed; per-control snapshots intentionally skipped in favour of pixel-read assertions (48 spec files, 1624 cases) to avoid GPU-variance flakes |
 
+## Phase 7 - Post-1.0 enhancements
+
+| ID   | Title                                                      | Deps              | Status  |
+|------|------------------------------------------------------------|-------------------|---------|
+| T700 | `FilePicker` rewrite - File-blob API, web-native dialog, clear/browse buttons; updates `PropertyFile` to expose `getFile()`; ImagePanel demo gains custom-image loader. Replaces the original stub from T500. | T500, T407, T111  | done    |
+
 ## Running total
 - **Infrastructure:** 11 tasks
 - **Controls:** 48 tasks (across Phases 1-5)
 - **Release:** 9 tasks
-- **Grand total:** 68 tasks
+- **Post-1.0:** 1 task
+- **Grand total:** 69 tasks
 
 ## Notes for the orchestrator
 - `deps` is **reverse-blocking**: a task can start only when every listed dep is `done`.

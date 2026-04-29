@@ -229,11 +229,27 @@ export class TabControl extends Base {
   }
 
   protected onTabPressed(btn: TabButton): void {
+    // Defend against stale onPress subscriptions left over from
+    // re-parenting between docks. Each `attachTabButton` adds a new
+    // `btn.onPress.on(...)` callback bound to a specific TC, but never
+    // removes earlier ones (the disposer model doesn't support
+    // remove-by-target). When a tab has been moved A → B and the user
+    // clicks it in B, the A-side subscription fires too — without this
+    // guard, A would mutate its own `_currentButton` and hide one of
+    // its pages even though the clicked button no longer belongs to it.
+    if (btn.parent !== this._tabStrip) return;
     const page = btn.getPage();
     if (!page) return;
     if (this._currentButton && this._currentButton !== btn) {
       const oldPage = this._currentButton.getPage();
-      if (oldPage) oldPage.hide();
+      // Only hide the old page when it's still our child. After a tab
+      // is dragged to another DockedTabControl, the source TC's
+      // attachTabButton cleanup presses a remaining tab to clear its
+      // stale `_currentButton`. Hiding unconditionally would hide the
+      // moved page — which now lives in the *destination* inner panel —
+      // so the new dock visibly empties out (the symptom of the
+      // re-docking bug, fixed by gating on parent identity).
+      if (oldPage && oldPage.parent === this._inner) oldPage.hide();
     }
     page.show();
     this._currentButton = btn;

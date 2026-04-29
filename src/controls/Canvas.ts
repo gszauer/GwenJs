@@ -341,7 +341,19 @@ export class Canvas extends Base implements InputTarget, CanvasLike {
     // normal layout / hit-test passes.
     const wasHidden = tip.hidden();
     tip.setHidden(false);
+    // skin.drawToolTip uses tip.getRenderBounds() = (0, 0, w, h) and
+    // draws via the renderer (which adds its current offset). Without
+    // shifting the offset to the tip's canvas position the 9-slice
+    // background paints at world (0, 0) — only the text inside
+    // tip.doRender lands at the cursor, leaving a stray fragment of
+    // glyph at the actual tooltip position. Set the offset around the
+    // background draw, then restore so doRender's own offset add (which
+    // is relative to the offset at entry) lands the text correctly.
+    const renderer = this.skin.renderer;
+    const savedOffset = renderer.getRenderOffset();
+    renderer.setRenderOffset(point(savedOffset.x + tx, savedOffset.y + ty));
     this.skin.drawToolTip(tip);
+    renderer.setRenderOffset(savedOffset);
     tip.doRender(this.skin);
     tip.setHidden(wasHidden);
   }

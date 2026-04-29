@@ -56,8 +56,13 @@ export class Label extends Base {
     // recover the tooltip text.
     tip.setName(text);
     tip.setPadding(margin(5, 3, 5, 3));
-    tip.sizeToContents();
+    // Parent first so the inner Text can reach the skin via the
+    // ancestor chain — Text.refreshSize early-returns when no skin is
+    // reachable, and `sizeToContents` calls into refreshSize. Sizing
+    // before parenting leaves the tip at the default 10×10 + padding,
+    // which truncates the rendered tooltip to a tiny stub.
     this.setToolTipControl(tip);
+    tip.sizeToContents();
   }
 
   setText(s: string, doEvents = true): void {

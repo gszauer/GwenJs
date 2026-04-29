@@ -255,18 +255,34 @@ export class HorizontalSlider extends Slider {
     );
   }
 
-  // Track-aligned focus ring — a 5px-tall band (matching the notch
-  // tick height) centered on the slider, extended 3px outside the
-  // slider on each side so the left/right edges land in clean
-  // negative space rather than on top of the nib at min/max value.
-  // `renderFocus` runs with the parent's clip active (see
-  // Base.renderRecursive), so drawing at negative x is safe.
-  override renderFocus(skin: Skin): void {
+  // Track-aligned focus band — wraps the nib with a few px of breathing
+  // room on each side and overshoots the slider's left/right edges by
+  // 3 px so the corners land in clean negative space rather than on
+  // top of the nib at min/max value. Even height + Y derived from
+  // `(slider.h - boxH) / 2` keeps top/bottom slack equal in pixel
+  // space, dodging the half-pixel rounding asymmetry that biased the
+  // previous 5-tall box visibly toward the bottom.
+  //
+  // Drawn from `renderUnder` rather than `renderFocus` so the
+  // draggable nib (a child, drawn after `render`) ends up on top of
+  // the dashed band instead of underneath it. Both hooks run with the
+  // parent's clip active (see Base.renderRecursive), so the ±3px
+  // overshoot still shows.
+  override renderUnder(skin: Skin): void {
+    super.renderUnder(skin);
     const canvas = this.getCanvas();
     if (!canvas || canvas.keyboardFocus !== this) return;
     if (!this.isTabable()) return;
-    const cy = Math.floor(this.height() / 2);
-    skin.drawKeyboardHighlight(this, rect(-3, cy - 2, this.width() + 6, 5), 0);
+    const boxH = 12;
+    const boxY = Math.floor((this.height() - boxH) / 2);
+    skin.drawKeyboardHighlight(this, rect(-3, boxY, this.width() + 6, boxH), 0);
+  }
+
+  // Suppress the default focus ring — already drawn beneath children
+  // in `renderUnder`. Without this, Base.renderFocus would also paint
+  // its default rectangle on top of the nib.
+  override renderFocus(_skin: Skin): void {
+    /* drawn from renderUnder */
   }
 }
 
@@ -316,14 +332,22 @@ export class VerticalSlider extends Slider {
     );
   }
 
-  // See HorizontalSlider.renderFocus — same idea, vertical orientation:
-  // a 5px-wide band centered on the slider's width and extended 3px
-  // past the top and bottom.
-  override renderFocus(skin: Skin): void {
+  // See HorizontalSlider.renderUnder — same idea, vertical orientation:
+  // a 12px-wide band centered on the slider's width with 3px overshoot
+  // top/bottom so the corners stay clear of the nib at min/max value.
+  // Drawn from `renderUnder` so the nib (child, drawn after `render`)
+  // sits on top.
+  override renderUnder(skin: Skin): void {
+    super.renderUnder(skin);
     const canvas = this.getCanvas();
     if (!canvas || canvas.keyboardFocus !== this) return;
     if (!this.isTabable()) return;
-    const cx = Math.floor(this.width() / 2);
-    skin.drawKeyboardHighlight(this, rect(cx - 2, -3, 5, this.height() + 6), 0);
+    const boxW = 12;
+    const boxX = Math.floor((this.width() - boxW) / 2);
+    skin.drawKeyboardHighlight(this, rect(boxX, -3, boxW, this.height() + 6), 0);
+  }
+
+  override renderFocus(_skin: Skin): void {
+    /* drawn from renderUnder */
   }
 }

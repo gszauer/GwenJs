@@ -138,6 +138,7 @@
     hsvToColor: () => hsvToColor,
     lerpColor: () => lerpColor,
     margin: () => margin,
+    openNativeFileDialog: () => openNativeFileDialog,
     placeBelow: () => placeBelow,
     point: () => point,
     rect: () => rect,
@@ -4999,7 +5000,11 @@ void main() {
       tip.setPos(tx, ty);
       const wasHidden = tip.hidden();
       tip.setHidden(false);
+      const renderer2 = this.skin.renderer;
+      const savedOffset = renderer2.getRenderOffset();
+      renderer2.setRenderOffset(point(savedOffset.x + tx, savedOffset.y + ty));
       this.skin.drawToolTip(tip);
+      renderer2.setRenderOffset(savedOffset);
       tip.doRender(this.skin);
       tip.setHidden(wasHidden);
     }
@@ -5668,8 +5673,8 @@ void main() {
       tip.setText(text);
       tip.setName(text);
       tip.setPadding(margin(5, 3, 5, 3));
-      tip.sizeToContents();
       this.setToolTipControl(tip);
+      tip.sizeToContents();
     }
     setText(s, doEvents = true) {
       if (this._text.getText() === s) return;
@@ -6974,18 +6979,32 @@ void main() {
         this._bar.width()
       );
     }
-    // Track-aligned focus ring — a 5px-tall band (matching the notch
-    // tick height) centered on the slider, extended 3px outside the
-    // slider on each side so the left/right edges land in clean
-    // negative space rather than on top of the nib at min/max value.
-    // `renderFocus` runs with the parent's clip active (see
-    // Base.renderRecursive), so drawing at negative x is safe.
-    renderFocus(skin2) {
+    // Track-aligned focus band — wraps the nib with a few px of breathing
+    // room on each side and overshoots the slider's left/right edges by
+    // 3 px so the corners land in clean negative space rather than on
+    // top of the nib at min/max value. Even height + Y derived from
+    // `(slider.h - boxH) / 2` keeps top/bottom slack equal in pixel
+    // space, dodging the half-pixel rounding asymmetry that biased the
+    // previous 5-tall box visibly toward the bottom.
+    //
+    // Drawn from `renderUnder` rather than `renderFocus` so the
+    // draggable nib (a child, drawn after `render`) ends up on top of
+    // the dashed band instead of underneath it. Both hooks run with the
+    // parent's clip active (see Base.renderRecursive), so the ±3px
+    // overshoot still shows.
+    renderUnder(skin2) {
+      super.renderUnder(skin2);
       const canvas2 = this.getCanvas();
       if (!canvas2 || canvas2.keyboardFocus !== this) return;
       if (!this.isTabable()) return;
-      const cy = Math.floor(this.height() / 2);
-      skin2.drawKeyboardHighlight(this, rect(-3, cy - 2, this.width() + 6, 5), 0);
+      const boxH = 12;
+      const boxY = Math.floor((this.height() - boxH) / 2);
+      skin2.drawKeyboardHighlight(this, rect(-3, boxY, this.width() + 6, boxH), 0);
+    }
+    // Suppress the default focus ring — already drawn beneath children
+    // in `renderUnder`. Without this, Base.renderFocus would also paint
+    // its default rectangle on top of the nib.
+    renderFocus(_skin) {
     }
   };
   // Thumb size in pixels — 15 matches the Input.Slider.H.* single atlas
@@ -7025,15 +7044,21 @@ void main() {
         this._bar.height()
       );
     }
-    // See HorizontalSlider.renderFocus — same idea, vertical orientation:
-    // a 5px-wide band centered on the slider's width and extended 3px
-    // past the top and bottom.
-    renderFocus(skin2) {
+    // See HorizontalSlider.renderUnder — same idea, vertical orientation:
+    // a 12px-wide band centered on the slider's width with 3px overshoot
+    // top/bottom so the corners stay clear of the nib at min/max value.
+    // Drawn from `renderUnder` so the nib (child, drawn after `render`)
+    // sits on top.
+    renderUnder(skin2) {
+      super.renderUnder(skin2);
       const canvas2 = this.getCanvas();
       if (!canvas2 || canvas2.keyboardFocus !== this) return;
       if (!this.isTabable()) return;
-      const cx = Math.floor(this.width() / 2);
-      skin2.drawKeyboardHighlight(this, rect(cx - 2, -3, 5, this.height() + 6), 0);
+      const boxW = 12;
+      const boxX = Math.floor((this.width() - boxW) / 2);
+      skin2.drawKeyboardHighlight(this, rect(boxX, -3, boxW, this.height() + 6), 0);
+    }
+    renderFocus(_skin) {
     }
   };
   _VerticalSlider.BAR_SIZE = 15;
@@ -8577,29 +8602,45 @@ void main() {
       }
     }
   };
+  var CHEVRON_DOWN = "\u25BC";
+  var CHEVRON_RIGHT = "\u25B6";
   var CollapsibleCategory = class extends Base {
     constructor(parent) {
       super(parent);
       this.onSelection = new Signal();
+      // Caller-supplied title, stored separately so we can keep the
+      // chevron prefix in sync without losing it on `setText`.
+      this._title = "Category Title";
       this.setBounds(0, 0, 512, 20);
       this.setPadding(margin(1, 0, 1, 5));
       this._headerButton = new Button(this);
-      this._headerButton.setText("Category Title");
       this._headerButton.dock(Pos.Top);
       this._headerButton.setHeight(20);
       this._headerButton.setIsToggle(true);
       this._headerButton.setShouldDrawBackground(false);
-      this._headerButton.setAlignment(Pos.Center);
-      this._headerButton.onPress.on(() => this.invalidate());
+      this._headerButton.setAlignment(Pos.Left | Pos.CenterV);
+      this._headerButton.setPadding(margin(6, 0, 0, 0));
+      this._headerButton.onPress.on(() => {
+        this.updateHeaderText();
+        this.invalidate();
+      });
+      this.updateHeaderText();
     }
     // =====================================================================
     // Config
     // =====================================================================
     setText(t) {
-      this._headerButton.setText(t);
+      this._title = t;
+      this.updateHeaderText();
     }
     getText() {
-      return this._headerButton.getText();
+      return this._title;
+    }
+    // Keep the header button's label in sync with the title + current
+    // collapse state. Called from setText and from the toggle handler.
+    updateHeaderText() {
+      const chevron = this._headerButton.getToggleState() ? CHEVRON_RIGHT : CHEVRON_DOWN;
+      this._headerButton.setText(`${chevron}  ${this._title}`);
     }
     // =====================================================================
     // Rows
@@ -8901,11 +8942,12 @@ void main() {
       skin2.drawKeyboardHighlight(this, rect(x, y, btn.width(), btn.height()), 0);
     }
     onTabPressed(btn) {
+      if (btn.parent !== this._tabStrip) return;
       const page = btn.getPage();
       if (!page) return;
       if (this._currentButton && this._currentButton !== btn) {
         const oldPage = this._currentButton.getPage();
-        if (oldPage) oldPage.hide();
+        if (oldPage && oldPage.parent === this._inner) oldPage.hide();
       }
       page.show();
       this._currentButton = btn;
@@ -9243,6 +9285,7 @@ void main() {
     moveTabsTo(target) {
       const strip = this.getTabStrip();
       const snapshot = strip.children.slice();
+      const wasCurrent = this.getCurrentButton();
       let moved = false;
       for (const c of snapshot) {
         if (c instanceof TabButton) {
@@ -9252,6 +9295,9 @@ void main() {
       }
       this.invalidate();
       if (moved) {
+        if (wasCurrent && wasCurrent.parent === target.getTabStrip()) {
+          target.onTabPressedExt(wasCurrent);
+        }
         const info = eventInfo();
         info.controlCaller = this;
         this.onLoseTab.emit(info);
@@ -9274,10 +9320,7 @@ void main() {
       btn.sizeToContents();
       btn.setTabControl(this);
       btn.onPress.on(() => this.handleTabPress(btn));
-      const cur = this.getCurrentButton();
-      if (!cur || cur.parent !== this.getTabStrip() || cur === btn) {
-        this.handleTabPress(btn);
-      }
+      this.handleTabPress(btn);
       this.invalidate();
       if (sourceTC && sourceTC !== this) {
         if (sourceTC instanceof _DockedTabControl) {
@@ -11503,10 +11546,7 @@ void main() {
       btn.sizeToContents();
       btn.setTabControl(target);
       btn.onPress.on(() => target.onTabPressedExt(btn));
-      const cur = target.getCurrentButton();
-      if (!cur || cur.parent !== target.getTabStrip() || cur === btn) {
-        target.onTabPressedExt(btn);
-      }
+      target.onTabPressedExt(btn);
       target.invalidate();
       if (sourceTC && sourceTC !== target && sourceTC instanceof DockedTabControl) {
         const sourceCur = sourceTC.getCurrentButton();
@@ -12258,71 +12298,208 @@ void main() {
   }
 
   // src/controls/FilePicker.ts
+  function gwenFilterToAccept(filter) {
+    const parts = filter.split("|");
+    const exts = parts[parts.length - 1] ?? "";
+    const tokens = exts.match(/\*\.[A-Za-z0-9]+/g) ?? [];
+    return tokens.map((t) => t.replace("*", "")).join(",");
+  }
   var FilePicker = class extends Base {
     constructor(parent) {
       super(parent);
       this.onFileChanged = new Signal();
-      // Filter string in GWEN's "Label | *.ext" format. Passed verbatim to
-      // Dialogs.fileOpen which parses the *.ext tokens into a browser
-      // `accept` attribute.
+      this._file = null;
+      // Independent of `_file` so PropertyFile.setPropertyValue('foo.txt')
+      // can prefill a display name without fabricating a File. When the
+      // user picks a real file the two are kept in sync.
+      this._displayName = "";
+      // Browser `accept` attribute. Either set directly via `setAccept`
+      // ('image/*') or derived from a GWEN-style filter via `setFileType`.
+      this._accept = "";
       this._fileType = "Any Type | *.*";
-      this.setSize(100, 20);
-      this._button = new Button(this);
-      this._button.dock(Pos.Right);
-      this._button.setWidth(20);
-      this._button.setText("..");
-      this._button.setMargin(margin(2, 0, 0, 0));
-      this._button.onPress.on(() => {
-        void this.onBrowse();
+      this.setSize(220, 22);
+      this._browseButton = new Button(this);
+      this._browseButton.dock(Pos.Right);
+      this._browseButton.setWidth(70);
+      this._browseButton.setText("Browse\u2026");
+      this._browseButton.setMargin(margin(2, 0, 0, 0));
+      this._browseButton.setTabable(true);
+      this._browseButton.setKeyboardInputEnabled(true);
+      this._browseButton.onPress.on(() => {
+        try {
+          void this.openDialog().catch(() => {
+          });
+        } catch {
+        }
       });
+      this._clearButton = new Button(this);
+      this._clearButton.dock(Pos.Right);
+      this._clearButton.setWidth(22);
+      this._clearButton.setText("\u2715");
+      this._clearButton.setMargin(margin(2, 0, 0, 0));
+      this._clearButton.setTabable(true);
+      this._clearButton.setKeyboardInputEnabled(true);
+      this._clearButton.hide();
+      this._clearButton.onPress.on(() => this.clear());
       this._textBox = new TextBox(this);
       this._textBox.dock(Pos.Fill);
+      this._textBox.setEditable(false);
+      this._textBox.setMouseInputEnabled(false);
+      this._textBox.setKeyboardInputEnabled(false);
+      this._textBox.setTabable(false);
     }
     // =====================================================================
     // Filter configuration
     // =====================================================================
+    /** Set the browser `accept` attribute directly (e.g. 'image/*' or '.png,.jpg'). */
+    setAccept(s) {
+      this._accept = s;
+    }
+    getAccept() {
+      return this._accept;
+    }
+    /**
+     * Set a GWEN-style filter string ("Label | *.ext1;*.ext2"). The
+     * extension tokens are translated into a browser `accept` value;
+     * the label is dropped (browsers don't surface it).
+     */
     setFileType(s) {
       this._fileType = s;
+      this._accept = gwenFilterToAccept(s);
     }
     getFileType() {
       return this._fileType;
     }
     // =====================================================================
-    // File name accessors — the canonical value is the TextBox contents.
+    // File / name accessors
     // =====================================================================
-    setFileName(v) {
-      this._textBox.setText(v);
-      const info = eventInfo();
-      info.controlCaller = this;
-      info.string = v;
-      this.onFileChanged.emit(info);
+    /** Returns the currently selected File, or null if cleared. */
+    getFile() {
+      return this._file;
     }
+    /**
+     * Returns the display name. Equal to `getFile()?.name` when a real
+     * file is held; otherwise whatever was last set via `setFileName`
+     * (the "advisory display only" path).
+     */
     getFileName() {
-      return this._textBox.getText();
+      return this._displayName;
     }
-    // Property-editor shaped aliases — kept so a future PropertyFilePicker
-    // can treat this like any other property without special-casing the
-    // accessor names.
+    /**
+     * Replace the held File (or pass null to clear). Updates the display,
+     * toggles the clear button's enabled state, and fires `onFileChanged`
+     * unless `fireEvents` is explicitly false.
+     */
+    setFile(file, fireEvents = true) {
+      this._file = file;
+      this._displayName = file ? file.name : "";
+      this._textBox.setText(this._displayName);
+      this._clearButton.setHidden(!this.hasContent());
+      this.invalidate();
+      if (fireEvents) this.fireChanged();
+    }
+    /**
+     * Set the display name without altering the File reference. Use this
+     * to rehydrate a saved selection from a string when the bytes aren't
+     * available. `getFile()` will continue to return whatever was held
+     * (typically null in this scenario).
+     */
+    setFileName(name, fireEvents = true) {
+      this._displayName = name;
+      this._textBox.setText(name);
+      this._clearButton.setHidden(!this.hasContent());
+      this.invalidate();
+      if (fireEvents) this.fireChanged();
+    }
+    /** True iff the picker holds either a File or a non-empty display name. */
+    hasContent() {
+      return this._file !== null || this._displayName !== "";
+    }
+    /** Drop the held File and clear the display. Always fires `onFileChanged`. */
+    clear(fireEvents = true) {
+      this.setFile(null, fireEvents);
+    }
+    // Property-grid aliases — kept so PropertyFile (and any future
+    // serializer) treats the picker like any other property without
+    // special-casing the accessor names.
     getValue() {
       return this.getFileName();
     }
     setValue(v) {
-      this.setFileName(v);
+      if (v === "") this.clear();
+      else this.setFileName(v);
     }
+    // =====================================================================
+    // Child accessors (mainly for tests + custom styling)
+    // =====================================================================
     getTextBox() {
       return this._textBox;
     }
-    getButton() {
-      return this._button;
+    getBrowseButton() {
+      return this._browseButton;
+    }
+    getClearButton() {
+      return this._clearButton;
     }
     // =====================================================================
-    // Browse handler
+    // Dialog
     // =====================================================================
-    async onBrowse() {
-      const path = await fileOpen(true, "Open", "", this._fileType);
-      if (path) this.setFileName(path);
+    /**
+     * Open the browser's native file dialog. Resolves with the picked File
+     * or null on cancel / no DOM. Public so callers can trigger the dialog
+     * programmatically (e.g. from a keyboard shortcut on a parent panel).
+     *
+     * On success the picker's state updates and `onFileChanged` fires
+     * before the promise resolves — handlers can read `getFile()` directly.
+     */
+    async openDialog() {
+      if (typeof document === "undefined") return null;
+      const file = await openNativeFileDialog(this._accept);
+      if (file) this.setFile(file);
+      return file;
+    }
+    // =====================================================================
+    // Internal
+    // =====================================================================
+    fireChanged() {
+      const info = eventInfo();
+      info.controlCaller = this;
+      info.string = this._displayName;
+      info.data = this._file;
+      this.onFileChanged.emit(info);
     }
   };
+  function openNativeFileDialog(accept = "") {
+    if (typeof document === "undefined") return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      if (accept) input.accept = accept;
+      input.style.position = "fixed";
+      input.style.left = "-10000px";
+      input.style.top = "-10000px";
+      input.style.opacity = "0";
+      input.style.pointerEvents = "none";
+      let settled = false;
+      const cleanup = () => {
+        if (input.parentNode) input.parentNode.removeChild(input);
+      };
+      const settle = (file) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(file);
+      };
+      input.onchange = () => settle(input.files?.[0] ?? null);
+      input.oncancel = () => settle(null);
+      document.body.appendChild(input);
+      try {
+        input.click();
+      } catch {
+        settle(null);
+      }
+    });
+  }
   var FolderPicker = class extends Base {
     constructor(parent) {
       super(parent);
@@ -12699,16 +12876,20 @@ void main() {
         info.string = this.getPropertyValue();
         this.onChange.emit(info);
       });
-      this.setHeight(18);
+      this.setHeight(22);
     }
     getFilePicker() {
       return this._picker;
+    }
+    /** Convenience — same as `getFilePicker().getFile()`. */
+    getFile() {
+      return this._picker.getFile();
     }
     getPropertyValue() {
       return this._picker.getFileName();
     }
     setPropertyValue(v, _fireEvents = true) {
-      this._picker.setFileName(v);
+      this._picker.setValue(v);
     }
     isEditing() {
       return false;
@@ -13103,6 +13284,32 @@ void main() {
     const redBlock = new ColorDisplay(p);
     redBlock.setColor(color(255, 0, 0, 255));
     redBlock.setBounds(330, 80, 96, 96);
+    const customFrame = new Rectangle(p);
+    customFrame.setBounds(440, 80, 96, 96);
+    customFrame.setColor(color(80, 80, 80, 255));
+    const customPanel = new ImagePanel(p);
+    customPanel.setBounds(440, 80, 96, 96);
+    const hint = new Label(p);
+    hint.setText("Load a custom image:");
+    hint.setBounds(220, 200, 200, 18);
+    const picker = new FilePicker(p);
+    picker.setBounds(220, 222, 316, 22);
+    picker.setAccept("image/*");
+    picker.onFileChanged.on(() => {
+      const f = picker.getFile();
+      if (!f) {
+        customPanel.setTexture(texture());
+        log("ImagePanel: cleared custom image");
+        return;
+      }
+      const url = URL.createObjectURL(f);
+      ImagePanel.loadFromURL(url, renderer).then((tex) => {
+        customPanel.setTexture(tex);
+        log(`ImagePanel: loaded ${f.name} (${tex.width}\xD7${tex.height})`);
+      }).catch((err) => {
+        log(`ImagePanel: failed to load ${f.name} \u2014 ${err.message}`);
+      }).finally(() => URL.revokeObjectURL(url));
+    });
   });
   addDemo(nonInteractiveCat, "StatusBar", (p) => {
     const info = new Label(p);
@@ -13358,6 +13565,12 @@ void main() {
       cb.addItem("Five Birds", "five");
       const comboRow = item.addRow("ComboBox", combo, "one");
       comboRow.onChange.on(() => log(`ComboBox: ${combo.getPropertyValue()}`));
+      const fileProp = new PropertyFile(item);
+      const fileRow = item.addRow("File", fileProp);
+      fileRow.onChange.on(() => {
+        const f = fileProp.getFile();
+        log(`File: ${f ? `${f.name} (${f.size} bytes)` : "(cleared)"}`);
+      });
     }
     {
       const item = tree.add("Item Three");
@@ -13471,6 +13684,35 @@ void main() {
     cp.setColor(color(255, 100, 50, 255));
     const hsv2 = new HSVColorPicker(p);
     hsv2.setBounds(300, 20, 256, 180);
+  });
+  addDemo(nonStandardCat, "FilePicker", (p) => {
+    const intro = new Label(p);
+    intro.setText("Pick a file to see its name, size, and MIME type.");
+    intro.setBounds(20, 20, 500, 18);
+    const picker = new FilePicker(p);
+    picker.setBounds(20, 50, 360, 22);
+    const info = new Label(p);
+    info.setText("No file selected.");
+    info.setBounds(20, 84, 500, 18);
+    picker.onFileChanged.on(() => {
+      const f = picker.getFile();
+      if (!f) {
+        info.setText("No file selected.");
+        log("FilePicker: cleared");
+        return;
+      }
+      const kb = (f.size / 1024).toFixed(1);
+      info.setText(`${f.name} \u2014 ${kb} KB \u2014 ${f.type || "unknown type"}`);
+      log(`FilePicker: ${f.name} (${f.size} bytes, ${f.type || "unknown"})`);
+    });
+    const grid = new Properties(p);
+    grid.setBounds(20, 130, 500, 60);
+    const propRow = grid.addRow("Attachment", new PropertyFile(grid));
+    propRow.onChange.on(() => {
+      const prop = propRow.getProperty();
+      const f = prop ? prop.getFile() : null;
+      log(`PropertyFile: ${f ? f.name : "(cleared)"}`);
+    });
   });
   showDemo("Button");
   var demoWindow = window;

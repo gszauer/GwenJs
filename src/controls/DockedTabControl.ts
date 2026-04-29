@@ -74,6 +74,10 @@ export class DockedTabControl extends TabControl {
   moveTabsTo(target: DockedTabControl): void {
     const strip = this.getTabStrip();
     const snapshot = strip.children.slice();
+    // Capture the source's current selection before the move scrambles
+    // it — we want the user's currently-visible tab to remain visible
+    // after the whole-dock drag completes.
+    const wasCurrent = this.getCurrentButton();
     let moved = false;
     for (const c of snapshot) {
       if (c instanceof TabButton) {
@@ -82,9 +86,14 @@ export class DockedTabControl extends TabControl {
       }
     }
     this.invalidate();
-    // Tell our owning DockBase that we lost tabs so it runs its
-    // redundancy/consolidation pass and hides the now-empty source dock.
     if (moved) {
+      // Promote the source's previous current selection in the target.
+      // attachTabButton's per-tab loop only auto-selects when target
+      // has no live current; with multiple tabs the first one wins,
+      // so the original current would land inactive.
+      if (wasCurrent && wasCurrent.parent === target.getTabStrip()) {
+        target.onTabPressedExt(wasCurrent);
+      }
       const info = eventInfo();
       info.controlCaller = this;
       this.onLoseTab.emit(info);
@@ -119,14 +128,14 @@ export class DockedTabControl extends TabControl {
     // (see header comment).
     btn.onPress.on(() => this.handleTabPress(btn));
 
-    // Select the incoming tab when there's no live selection. "Live"
-    // means the cached `_currentButton` is still a child of OUR strip —
-    // a stale ref left over from a tab that was moved away (or one being
-    // re-attached now) is not live, so we still need to fire the press.
-    const cur = this.getCurrentButton();
-    if (!cur || cur.parent !== this.getTabStrip() || cur === btn) {
-      this.handleTabPress(btn);
-    }
+    // Always press the incoming tab. The user's drag-and-drop intent is
+    // "show this tab here" — leaving it inactive when the target had a
+    // pre-existing current button hides the just-dragged page until the
+    // user clicks the new tab manually, which feels broken. moveTabsTo
+    // (whole-dock drag) compensates afterwards by re-pressing the
+    // source's original current, so the multi-tab move still preserves
+    // the user's selection.
+    this.handleTabPress(btn);
 
     this.invalidate();
     if (sourceTC && sourceTC !== this) {

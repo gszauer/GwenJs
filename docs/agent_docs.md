@@ -125,8 +125,8 @@ Every public control, its direct base class, primary signals, and purpose. Const
 | `PropertyFolder` | `PropertyBase` | `onChange` | Folder picker editor. |
 | `PropertyTree` | `TreeControl` | — | Tree of property groups. |
 | `PropertyTreeNode` | `TreeNode` | — | Tree node hosting a Properties. |
-| `FilePicker` | `WindowControl` | `onSelect` | File-browser dialog. |
-| `FolderPicker` | `WindowControl` | `onSelect` | Folder-browser dialog. |
+| `FilePicker` | `Base` | `onFileChanged` | File-blob picker (read-only path + clear + browse). Holds a `File` reference; `getFile()` returns the blob, `getFileName()` the basename. |
+| `FolderPicker` | `Base` | `onFolderChanged` | Folder name picker (uses `webkitdirectory`). Returns the folder name only — sandboxed browsers don't expose a real path. |
 
 ## Pattern cookbook
 
@@ -247,6 +247,50 @@ s.setFloatValue(50);
 s.onValueChanged.on((e) => console.log('value →', (e.controlCaller as Gwen.HorizontalSlider).getFloatValue()));
 ```
 
+### Pick a file and read its bytes
+
+`FilePicker` is a composite control: a read-only path display, a clear (✕) button, and a Browse… button. The Browse… button opens the browser's native file dialog and the picker holds a real `File` reference (a `Blob` subclass) that callers can read with `arrayBuffer()` / `text()` / `stream()`. The clear button is hidden until a file (or display name) is held — the dock pass reflows Browse… flush against the right edge when there's nothing to clear, so the layout stays minimal.
+
+```ts
+const fp = new Gwen.FilePicker(parent);
+fp.setBounds(20, 20, 360, 22);
+fp.setAccept('image/*');                 // or fp.setFileType('Images | *.png;*.jpg')
+
+fp.onFileChanged.on(async () => {
+  const f = fp.getFile();                // File | null
+  if (!f) return;                        // user cleared
+  const buf = await f.arrayBuffer();
+  console.log(`${f.name}: ${buf.byteLength} bytes (${f.type})`);
+});
+```
+
+To load the picked file into an `ImagePanel`:
+
+```ts
+fp.onFileChanged.on(() => {
+  const f = fp.getFile();
+  if (!f) { panel.setTexture(Gwen.texture()); return; }
+  const url = URL.createObjectURL(f);
+  Gwen.ImagePanel.loadFromURL(url, renderer)
+    .then((tex) => panel.setTexture(tex))
+    .finally(() => URL.revokeObjectURL(url));
+});
+```
+
+`PropertyFile` wraps the same picker for property grids; access the blob via `prop.getFile()`:
+
+```ts
+const props = new Gwen.Properties(parent);
+props.setBounds(20, 20, 320, 60);
+const row = props.addRow('Attachment', new Gwen.PropertyFile(props));
+row.onChange.on(() => {
+  const prop = row.getProperty() as Gwen.PropertyFile;
+  console.log('attached:', prop.getFile());
+});
+```
+
+Keyboard nav: the Browse and Clear buttons are tabable; the path display is not (it's read-only and the canonical state lives in the held `File`).
+
 ## Event payloads
 
 Every signal with data uses `EventInfo`:
@@ -255,7 +299,7 @@ Every signal with data uses `EventInfo`:
 | --- | --- | --- |
 | `controlCaller` | `unknown` (usually the firing control) | The control whose signal fired. |
 | `control` | `unknown` | Related control (e.g. drop source, selected row). |
-| `data` | `unknown` | Control-specific payload (e.g. `MenuItem` sets it to the raw item ref). |
+| `data` | `unknown` | Control-specific payload (e.g. `MenuItem` sets it to the raw item ref; `FilePicker.onFileChanged` sets it to the held `File` or `null`). |
 | `string` | `string` | Text value on text-bearing controls (`PropertyText.onChange`, etc.). |
 | `point` | `Point` | Pointer location when the event originated. |
 | `integer` | `number` | Numeric index (selected row, key code in key events). |

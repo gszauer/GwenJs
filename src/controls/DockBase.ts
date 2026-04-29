@@ -406,12 +406,11 @@ export class DockBase extends Base {
     btn.sizeToContents();
     btn.setTabControl(target);
     btn.onPress.on(() => target.onTabPressedExt(btn));
-    // Select the incoming tab when the target has no *live* selection.
-    // See DockedTabControl.attachTabButton for the stale-ref reasoning.
-    const cur = target.getCurrentButton();
-    if (!cur || cur.parent !== target.getTabStrip() || cur === btn) {
-      target.onTabPressedExt(btn);
-    }
+    // Always press the incoming tab. See DockedTabControl.attachTabButton
+    // for the rationale — the user's drag intent is "show this tab here",
+    // and leaving it inactive (when target already had a current) hides
+    // the just-dragged page until they click the tab manually.
+    target.onTabPressedExt(btn);
     target.invalidate();
 
     if (sourceTC && sourceTC !== target && sourceTC instanceof DockedTabControl) {

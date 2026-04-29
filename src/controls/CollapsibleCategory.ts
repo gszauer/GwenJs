@@ -47,10 +47,19 @@ class CategoryButton extends Button {
 // CollapsibleCategory
 // ---------------------------------------------------------------------------
 
+// Disclosure chevrons. Prepended to the header label so the
+// expand/collapse state reads at a glance — modernises the look
+// vs. GWEN's plain centered "Category Title".
+const CHEVRON_DOWN = '▼';
+const CHEVRON_RIGHT = '▶';
+
 export class CollapsibleCategory extends Base {
   readonly onSelection = new Signal<EventInfo>();
 
   protected _headerButton: Button;
+  // Caller-supplied title, stored separately so we can keep the
+  // chevron prefix in sync without losing it on `setText`.
+  protected _title = 'Category Title';
 
   constructor(parent: Base | null) {
     super(parent);
@@ -58,13 +67,18 @@ export class CollapsibleCategory extends Base {
     this.setPadding(margin(1, 0, 1, 5));
 
     this._headerButton = new Button(this);
-    this._headerButton.setText('Category Title');
     this._headerButton.dock(Pos.Top);
     this._headerButton.setHeight(20);
     this._headerButton.setIsToggle(true);
     this._headerButton.setShouldDrawBackground(false);
-    this._headerButton.setAlignment(Pos.Center);
-    this._headerButton.onPress.on(() => this.invalidate());
+    this._headerButton.setAlignment(Pos.Left | Pos.CenterV);
+    // 6px left padding so the chevron breathes off the panel edge.
+    this._headerButton.setPadding(margin(6, 0, 0, 0));
+    this._headerButton.onPress.on(() => {
+      this.updateHeaderText();
+      this.invalidate();
+    });
+    this.updateHeaderText();
   }
 
   // =====================================================================
@@ -72,11 +86,19 @@ export class CollapsibleCategory extends Base {
   // =====================================================================
 
   setText(t: string): void {
-    this._headerButton.setText(t);
+    this._title = t;
+    this.updateHeaderText();
   }
 
   getText(): string {
-    return this._headerButton.getText();
+    return this._title;
+  }
+
+  // Keep the header button's label in sync with the title + current
+  // collapse state. Called from setText and from the toggle handler.
+  protected updateHeaderText(): void {
+    const chevron = this._headerButton.getToggleState() ? CHEVRON_RIGHT : CHEVRON_DOWN;
+    this._headerButton.setText(`${chevron}  ${this._title}`);
   }
 
   // =====================================================================

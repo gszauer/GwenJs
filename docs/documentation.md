@@ -94,6 +94,7 @@ Controls are grouped loosely into families. A one-liner each:
 - **Docking:** `DockBase`.
 - **Colour:** `ColorPicker`, `HSVColorPicker`, `ColorLerpBox`, `ColorSlider`, `ColorDisplay`.
 - **Property grid:** `Properties`, `PropertyRow`, `PropertyText`, `PropertyCheckbox`, `PropertyNumeric`, `PropertyComboBox`, `PropertyColorSelector`, `PropertyFile`, `PropertyFolder`, `PropertyTree`, `PropertyTreeNode`.
+- **File pickers:** `FilePicker` (read-only path + clear + Browse…; holds a real `File` blob), `FolderPicker` (`webkitdirectory`-based).
 - **Dialogs:** `Dialogs.fileOpen`, `Dialogs.fileSave`, `Dialogs.folderOpen`, `Dialogs.query`.
 - **Layout helpers:** `Layout.Position`, `Layout.Center`, `Layout.Table`, `Layout.TableRow`, `Layout.Tile`.
 
@@ -171,7 +172,7 @@ WebGL2 is required. Global support is around 95% as of 2026 — a WebGL1 fallbac
 ## 12. Limitations
 
 - Tab tear-off drag-and-drop is functional for `DockedTabControl → DockedTabControl` within one canvas, but does not support detaching to a floating window.
-- File dialogs use the browser's native `<input type="file">` and the experimental File System Access API. Returned paths are file names only — the web sandbox does not expose filesystem paths.
+- File dialogs use the browser's native `<input type="file">` and the experimental File System Access API. The web sandbox does not expose filesystem paths, so display strings are basenames only. The `FilePicker` composite control retains a `File` reference (a `Blob` subclass) for the current selection — read it via `picker.getFile()` to access the bytes.
 - The skin is procedural; no upstream `.png` loader is wired in. Texture-bearing controls (`ImagePanel`, `Button.setImageTexture`) accept caller-supplied `Texture` objects produced via `ImagePanel.loadFromURL` or `renderer.loadTextureFromSource`.
 
 ## 13. Migrating from GWEN C++
