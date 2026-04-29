@@ -1,6 +1,6 @@
 # GwenJs
 
-A TypeScript port of the [GWEN](https://github.com/garrynewman/GWEN) C++ GUI library, rendered with WebGL2. GwenJs brings GWEN's retained-mode control set — buttons, windows, trees, docking panels (tabs-in-header, drag to reflow), colour pickers, property grids, file pickers, action bars, right-click menus — to the web as a single file with zero runtime dependencies. Touch and desktop share the same input path; the skin is rasterised procedurally into a GPU atlas at startup.
+A TypeScript port of the [GWEN](https://github.com/garrynewman/GWEN) C++ GUI library, rendered with WebGL2. GwenJs brings GWEN's retained-mode control set — buttons, windows, trees, docking panels (tabs-in-header, drag to reflow), colour pickers, property grids, file pickers, action bars, right-click menus — to the web as a single file with zero runtime dependencies. Touch and desktop share the same input path; the skin is rasterised procedurally into a GPU atlas at startup, with **Light** + **Dark** themes shipping out of the box (live-switchable via `skin.setTheme`).
 
 ## Quickstart
 

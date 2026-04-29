@@ -4,6 +4,26 @@ Append-only. Orchestrator writes a one-paragraph entry after each phase complete
 
 ---
 
+## 2026-04-29 — Dark skin + runtime theme switching
+
+New top-level feature: skins are themable at runtime. Two stock palettes ship — `LIGHT_PALETTE` (the existing Windows-XP / silver theme, default) and `DARK_PALETTE` (a VS Code-ish dark theme). Calling `skin.setTheme(palette)` re-paints the 512×512 atlas in place, re-uploads to the GPU keeping the same `WebGLTexture` handle, and rebuilds `skin.colors` — every existing control picks up new colours on next render without reconstruction.
+
+**Plumbing.**
+
+- `src/skin/AtlasRegions.ts`: extracted the frozen `PALETTE` constant into a `Palette` interface plus two named exports (`LIGHT_PALETTE` / `DARK_PALETTE`); `PALETTE` is kept as an alias to LIGHT for back-compat. The two BAKED palette strips (the on-atlas pixels GWEN tooling reads via `pixelColour`) became `bakedRow500(p)` / `bakedRow508(p)` factories so they can be regenerated for whichever palette is active.
+- `src/skin/DynamicSkin.ts`: introduced a module-level mutable `activePalette` (and matching `activeRow500` / `activeRow508`) that all 122 paint helpers reference. Replaced `PALETTE.X` with `activePalette.X` mechanically. Split `init()` into a private `paint()` method; both `init` and `setTheme` call it. `setTheme(palette)` swaps `activePalette`, re-paints the offscreen canvas, re-uploads via `loadTextureFromSource` (the same `Texture` slot — handle stable), and rebuilds the `colors` struct. Pre-`init` calls to `setTheme` defer painting; `init()` picks up the queued palette.
+- `src/skin/Skin.ts`: `setTheme(palette)` / `getPalette()` delegate to `dynamicSkin`. Switched the one direct `PALETTE.menuStripBg` reference (in `drawMenuStrip`) to read `dynamicSkin.getPalette().menuStripBg` so the strip re-tones live.
+
+**Text colours track the theme automatically.** `Text` got a `_colorIsExplicit` flag; render reads `skin.colors.label.default` when the flag is false, the explicit `_color` otherwise. `TextBox` no longer sets a hardcoded `#323232` in its constructor — same path makes it auto-flip in dark mode. Controls that already used `skin.colors.X` (Tree, Properties, etc.) needed no change.
+
+**Atlas region tweaks.** `Tab.HeaderBar` previously hardcoded `#e8e8e8` / `#cfcfcf` for its gradient — now reads `tabActiveTop` / `tabActiveBot` from the active palette. `Input.ListBox.OddLine` zebra stripe was a hardcoded `#f4f4f4` — now `panelBright` so it darkens correctly.
+
+**Demo: Help → Skin submenu.** Two checkable items (`Light`, `Dark`) under a new `Skin` entry in the Help menu, with the icon-margin gutter showing a check on the active theme. Clicking switches the palette + updates the canvas background via a small palette→Color helper. Output log records the change.
+
+**Tests.** `tests/skin-theme.spec.ts` — 7 cases: API exports + default, `setTheme` reflects on `getPalette` + `colors`, texture handle stability, idempotent same-palette, pre-init deferred paint, render-after-switch doesn't throw, baked-row content differs across palettes. **Full suite: 1708/1708 green** (1694 prior + 14 new × 2 projects).
+
+Bundle: 208.0 KB raw / 50.8 KB gzip.
+
 ## 2026-04-28 (later) — Right-click follow-ups: global menu in demo + Label mouse-input gotcha
 
 Two issues from the user after the initial right-click context-menu landing:

@@ -130,9 +130,27 @@ Hovering with either drag in flight paints a directional highlight inside the re
 
 `DynamicSkin` (`src/skin/DynamicSkin.ts`) paints every control region — button, window chrome, scrollbar, checkbox, tab — into a single 512×512 `OffscreenCanvas`, then uploads the result as one texture page. The atlas layout mirrors upstream GWEN's `DefaultSkin.png` so existing palette-probe code continues to work.
 
-To customise, subclass `DynamicSkin` and override `drawRegion(name, ctx, x, y, w, h)` for specific region names (they are enumerated in `src/skin/AtlasRegions.ts`). More invasively, subclass `Skin` directly to change the dispatch logic — every `drawXxx` method takes the control plus optional state flags.
+**Themes (Light / Dark).** Two stock palettes ship out of the box: `LIGHT_PALETTE` (the original Windows-XP / silver theme, used by default) and `DARK_PALETTE` (a VS Code-ish dark theme). Switch at runtime:
 
-Colours are exposed through `skin.colors` (a structured object). Palette tweaks don't require regenerating the atlas; text and border colours are sampled at draw time.
+```ts
+skin.setTheme(Gwen.DARK_PALETTE);
+canvas.redraw();   // next frame paints with the new palette
+```
+
+`setTheme` re-paints the atlas in place (the `WebGLTexture` handle stays stable, so existing controls keep working) and rebuilds the `skin.colors` struct so colour reads reflect the new theme on next render. The default text colour on every `Text` follows `skin.colors.label.default` automatically — controls don't need to opt in.
+
+Custom palettes: `Palette` is a flat object of named colour strings (see `src/skin/AtlasRegions.ts` for the field list). Construct your own and pass it to `setTheme`.
+
+```ts
+const myTheme: Gwen.Palette = {
+  ...Gwen.DARK_PALETTE,
+  accent: '#ff7700',           // tweak the focus/selection blue
+  panelFill: '#1a1a20',
+};
+skin.setTheme(myTheme);
+```
+
+To override individual region painters, subclass `DynamicSkin` and override `drawRegion(name, ctx, x, y, w, h)` for specific region names (enumerated in `AtlasRegions.ts`). More invasively, subclass `Skin` directly to change the dispatch logic — every `drawXxx` method takes the control plus optional state flags.
 
 ## 8. Touch support
 

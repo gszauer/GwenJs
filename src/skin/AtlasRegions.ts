@@ -215,9 +215,113 @@ for (const d of RAW_REGIONS) {
 }
 export const REGIONS: readonly RegionDescriptor[] = Object.freeze(RAW_REGIONS);
 
-// ---------- Palette (Windows-XP / silver theme) ----------
+// ---------- Palette types ----------
+//
+// Two stock palettes are exported: `LIGHT_PALETTE` (the original
+// Windows-XP / silver theme) and `DARK_PALETTE` (a VS Code-ish dark
+// theme). `PALETTE` is kept as an alias to LIGHT for back-compat.
+//
+// Both palettes share the same shape (`Palette` type below). The
+// active palette is stored on `DynamicSkin` and swapped at runtime via
+// `Skin.setTheme(...)`; the atlas re-paints + re-uploads, controls
+// keep their stable texture handle and pick up new colours on next
+// render.
 
-export const PALETTE = Object.freeze({
+export interface Palette {
+  readonly canvasBg: string;
+  readonly panelFill: string;
+  readonly panelBright: string;
+  readonly panelDark: string;
+  readonly panelHighlight: string;
+  readonly panelBorder: string;
+
+  readonly titleActiveTop: string;
+  readonly titleActiveBottom: string;
+  readonly titleInactiveTop: string;
+  readonly titleInactiveBot: string;
+
+  readonly buttonNormalTop: string;
+  readonly buttonNormalBot: string;
+  readonly buttonHoverTop: string;
+  readonly buttonHoverBot: string;
+  readonly buttonPressedTop: string;
+  readonly buttonPressedBot: string;
+  readonly buttonDisabled: string;
+  readonly buttonBorder: string;
+
+  readonly textboxBg: string;
+  readonly textboxBorder: string;
+  readonly textboxFocused: string;
+
+  readonly selection: string;
+  readonly scrollTrack: string;
+  readonly scrollTrackBorder: string;
+  readonly scrollThumbTop: string;
+  readonly scrollThumbBot: string;
+  readonly scrollThumbBorder: string;
+
+  readonly tooltipBg: string;
+  readonly tooltipBorder: string;
+
+  readonly statusBarBg: string;
+  readonly menuStripBg: string;
+  readonly menuHoverBg: string;
+
+  readonly progressBack: string;
+  readonly progressFront: string;
+
+  readonly shadow: string;
+
+  readonly textNormal: string;
+  readonly textDisabled: string;
+  readonly textOnDark: string;
+
+  readonly accent: string;
+
+  readonly tabActiveTop: string;
+  readonly tabActiveBot: string;
+  readonly tabInactiveTop: string;
+  readonly tabInactiveBot: string;
+
+  readonly treeLines: string;
+  readonly treeNormal: string;
+  readonly treeHover: string;
+  readonly treeSelected: string;
+
+  readonly propLineNormal: string;
+  readonly propLineSelected: string;
+  readonly propLineHover: string;
+  readonly propTitle: string;
+  readonly propColumnNormal: string;
+  readonly propColumnSelected: string;
+  readonly propColumnHover: string;
+  readonly propLabelNormal: string;
+  readonly propLabelSelected: string;
+  readonly propLabelHover: string;
+  readonly propBorder: string;
+
+  readonly modalBg: string;
+  readonly tooltipText: string;
+
+  readonly catHeader: string;
+  readonly catHeaderClosed: string;
+  readonly catLineText: string;
+  readonly catLineTextHover: string;
+  readonly catLineTextSelected: string;
+  readonly catLineButton: string;
+  readonly catLineButtonHover: string;
+  readonly catLineButtonSelected: string;
+  readonly catLineAltText: string;
+  readonly catLineAltTextHover: string;
+  readonly catLineAltTextSelected: string;
+  readonly catLineAltButton: string;
+  readonly catLineAltButtonHover: string;
+  readonly catLineAltButtonSelected: string;
+}
+
+// ---------- Light palette (Windows-XP / silver theme — default) ----------
+
+export const LIGHT_PALETTE: Palette = Object.freeze({
   canvasBg: '#7a9090',
   panelFill: '#e8e8e8',
   panelBright: '#f4f4f4',
@@ -320,7 +424,109 @@ export const PALETTE = Object.freeze({
   catLineAltButton: '#202020',
   catLineAltButtonHover: '#000000',
   catLineAltButtonSelected: '#ffffff',
-} as const);
+});
+
+// ---------- Dark palette (VS Code-ish) ----------
+//
+// Tunable; refined by visual feedback. Same shape as LIGHT_PALETTE so
+// `DynamicSkin` can swap one for the other at runtime without
+// reaching for unset fields.
+
+export const DARK_PALETTE: Palette = Object.freeze({
+  canvasBg: '#1e1e1e',
+  panelFill: '#2d2d30',
+  panelBright: '#3a3a3d',
+  panelDark: '#252526',
+  panelHighlight: '#3e3e42',
+  panelBorder: '#3f3f46',
+
+  titleActiveTop: '#37373d',
+  titleActiveBottom: '#2d2d30',
+  titleInactiveTop: '#2a2a2c',
+  titleInactiveBot: '#252526',
+
+  buttonNormalTop: '#3a3a3d',
+  buttonNormalBot: '#2d2d30',
+  buttonHoverTop: '#4a4a52',
+  buttonHoverBot: '#3a3a3d',
+  buttonPressedTop: '#252526',
+  buttonPressedBot: '#2d2d30',
+  buttonDisabled: '#2d2d30',
+  buttonBorder: '#3f3f46',
+
+  textboxBg: '#1e1e1e',
+  textboxBorder: '#3f3f46',
+  textboxFocused: '#0098ff',
+
+  selection: '#264f78',
+  scrollTrack: '#1e1e1e',
+  scrollTrackBorder: '#3f3f46',
+  scrollThumbTop: '#4a4a52',
+  scrollThumbBot: '#3a3a3d',
+  scrollThumbBorder: '#5a5a62',
+
+  tooltipBg: '#3c3c3c',
+  tooltipBorder: '#5a5a62',
+
+  statusBarBg: '#252526',
+  menuStripBg: '#252526',
+  menuHoverBg: '#094771',
+
+  progressBack: '#252526',
+  progressFront: '#0e7c1f',
+
+  shadow: 'rgba(0,0,0,0.65)',
+
+  textNormal: '#dcdcdc',
+  textDisabled: '#6a6a6a',
+  textOnDark: '#ffffff',
+
+  accent: '#0098ff',
+
+  tabActiveTop: '#3a3a3d',
+  tabActiveBot: '#2d2d30',
+  tabInactiveTop: '#252526',
+  tabInactiveBot: '#1e1e1e',
+
+  treeLines: '#5a5a62',
+  treeNormal: '#dcdcdc',
+  treeHover: '#ffffff',
+  treeSelected: '#ffffff',
+
+  propLineNormal: '#252526',
+  propLineSelected: '#264f78',
+  propLineHover: '#37373d',
+  propTitle: '#dcdcdc',
+  propColumnNormal: '#2d2d30',
+  propColumnSelected: '#37468a',
+  propColumnHover: '#3a3a3d',
+  propLabelNormal: '#dcdcdc',
+  propLabelSelected: '#ffffff',
+  propLabelHover: '#ffffff',
+  propBorder: '#3f3f46',
+
+  modalBg: 'rgba(0,0,0,0.55)',
+  tooltipText: '#dcdcdc',
+
+  catHeader: '#dcdcdc',
+  catHeaderClosed: '#6a6a6a',
+  catLineText: '#dcdcdc',
+  catLineTextHover: '#ffffff',
+  catLineTextSelected: '#ffffff',
+  catLineButton: '#dcdcdc',
+  catLineButtonHover: '#ffffff',
+  catLineButtonSelected: '#ffffff',
+  catLineAltText: '#bcbcbc',
+  catLineAltTextHover: '#ffffff',
+  catLineAltTextSelected: '#ffffff',
+  catLineAltButton: '#bcbcbc',
+  catLineAltButtonHover: '#ffffff',
+  catLineAltButtonSelected: '#ffffff',
+});
+
+// Back-compat alias — pre-theming code imports `PALETTE`. New code
+// should reach for `LIGHT_PALETTE` / `DARK_PALETTE` explicitly.
+export const PALETTE = LIGHT_PALETTE;
 
 // ---------- Baked palette strip ----------
 //
@@ -342,69 +548,82 @@ export interface BakedColor {
   readonly hex: string;
 }
 
-// y = 508 — primary fields (bordered patches, label colors).
-const RAW_BAKED_ROW_508: readonly BakedColor[] = [
-  { name: 'Window.TitleActive', hex: '#003c74' },
-  { name: 'Window.TitleInactive', hex: '#7a96b6' },
-  { name: 'Button.Normal', hex: PALETTE.textNormal },
-  { name: 'Button.Hover', hex: PALETTE.textNormal },
-  { name: 'Tab.Active.Normal', hex: PALETTE.textNormal },
-  { name: 'Tab.Active.Hover', hex: PALETTE.textNormal },
-  { name: 'Tab.Inactive.Normal', hex: PALETTE.textNormal },
-  { name: 'Tab.Inactive.Hover', hex: PALETTE.textNormal },
-  { name: 'Label.Default', hex: PALETTE.textNormal },
-  { name: 'Label.Bright', hex: '#ffffff' },
-  { name: 'Tree.Lines', hex: PALETTE.treeLines },
-  { name: 'Tree.Normal', hex: PALETTE.treeNormal },
-  { name: 'Properties.Line_Normal', hex: PALETTE.propLineNormal },
-  { name: 'Properties.Line_Selected', hex: PALETTE.propLineSelected },
-  { name: 'Properties.Column_Normal', hex: PALETTE.propColumnNormal },
-  { name: 'Properties.Column_Selected', hex: PALETTE.propColumnSelected },
-  { name: 'Properties.Label_Normal', hex: PALETTE.propLabelNormal },
-  { name: 'Properties.Label_Selected', hex: PALETTE.propLabelSelected },
-  // Translucent — opaque #191919 turned the screen pitch black behind a
-  // modal window, hiding the parent UI completely. ~40% alpha matches
-  // PALETTE.modalBg and dims-without-erasing the underlying content.
-  { name: 'ModalBackground', hex: 'rgba(25,25,25,0.40)' },
-  { name: 'TooltipText', hex: PALETTE.tooltipText },
-  { name: 'Category.Line.Text', hex: PALETTE.catLineText },
-  { name: 'Category.Line.Text_Hover', hex: PALETTE.catLineTextHover },
-  { name: 'Category.Line.Button_Hover', hex: PALETTE.catLineButtonHover },
-  { name: 'Category.Line.Button_Selected', hex: PALETTE.catLineButtonSelected },
-  { name: 'Category.LineAlt.Text_Selected', hex: PALETTE.catLineAltTextSelected },
-  { name: 'Category.LineAlt.Button', hex: PALETTE.catLineAltButton },
-];
-for (const c of RAW_BAKED_ROW_508) Object.freeze(c);
-export const BAKED_ROW_508: readonly BakedColor[] = Object.freeze(RAW_BAKED_ROW_508);
+// Factories: take a Palette and return the corresponding baked-row
+// arrays. Used by `DynamicSkin` so that switching themes at runtime
+// rebuilds the strip from the active palette without ever falling back
+// to stale Light values. The default-Light back-compat exports below
+// keep the module-level `BAKED_ROW_500` / `BAKED_ROW_508` names alive
+// for any external code that still imports them.
 
-// y = 500 — secondary fields (down/disabled states, hover variants).
-const RAW_BAKED_ROW_500: readonly BakedColor[] = [
-  { name: 'Pad500_0', hex: '#000000' },
-  { name: 'Pad500_1', hex: '#000000' },
-  { name: 'Button.Down', hex: PALETTE.textNormal },
-  { name: 'Button.Disabled', hex: PALETTE.textDisabled },
-  { name: 'Tab.Active.Down', hex: PALETTE.textNormal },
-  { name: 'Tab.Active.Disabled', hex: PALETTE.textDisabled },
-  { name: 'Tab.Inactive.Down', hex: PALETTE.textNormal },
-  { name: 'Tab.Inactive.Disabled', hex: PALETTE.textDisabled },
-  { name: 'Label.Dark', hex: '#000000' },
-  { name: 'Label.Highlight', hex: '#ffffff' },
-  { name: 'Tree.Hover', hex: PALETTE.treeHover },
-  { name: 'Tree.Selected', hex: PALETTE.treeSelected },
-  { name: 'Properties.Line_Hover', hex: PALETTE.propLineHover },
-  { name: 'Properties.Title', hex: PALETTE.propTitle },
-  { name: 'Properties.Column_Hover', hex: PALETTE.propColumnHover },
-  { name: 'Properties.Border', hex: PALETTE.propBorder },
-  { name: 'Properties.Label_Hover', hex: PALETTE.propLabelHover },
-  { name: 'Pad500_17', hex: '#000000' },
-  { name: 'Category.Header', hex: PALETTE.catHeader },
-  { name: 'Category.Header_Closed', hex: PALETTE.catHeaderClosed },
-  { name: 'Category.Line.Text_Selected', hex: PALETTE.catLineTextSelected },
-  { name: 'Category.Line.Button', hex: PALETTE.catLineButton },
-  { name: 'Category.LineAlt.Text', hex: PALETTE.catLineAltText },
-  { name: 'Category.LineAlt.Text_Hover', hex: PALETTE.catLineAltTextHover },
-  { name: 'Category.LineAlt.Button_Hover', hex: PALETTE.catLineAltButtonHover },
-  { name: 'Category.LineAlt.Button_Selected', hex: PALETTE.catLineAltButtonSelected },
-];
-for (const c of RAW_BAKED_ROW_500) Object.freeze(c);
-export const BAKED_ROW_500: readonly BakedColor[] = Object.freeze(RAW_BAKED_ROW_500);
+export function bakedRow508(p: Palette): readonly BakedColor[] {
+  const out: BakedColor[] = [
+    { name: 'Window.TitleActive', hex: '#003c74' },
+    { name: 'Window.TitleInactive', hex: '#7a96b6' },
+    { name: 'Button.Normal', hex: p.textNormal },
+    { name: 'Button.Hover', hex: p.textNormal },
+    { name: 'Tab.Active.Normal', hex: p.textNormal },
+    { name: 'Tab.Active.Hover', hex: p.textNormal },
+    { name: 'Tab.Inactive.Normal', hex: p.textNormal },
+    { name: 'Tab.Inactive.Hover', hex: p.textNormal },
+    { name: 'Label.Default', hex: p.textNormal },
+    { name: 'Label.Bright', hex: p.textOnDark },
+    { name: 'Tree.Lines', hex: p.treeLines },
+    { name: 'Tree.Normal', hex: p.treeNormal },
+    { name: 'Properties.Line_Normal', hex: p.propLineNormal },
+    { name: 'Properties.Line_Selected', hex: p.propLineSelected },
+    { name: 'Properties.Column_Normal', hex: p.propColumnNormal },
+    { name: 'Properties.Column_Selected', hex: p.propColumnSelected },
+    { name: 'Properties.Label_Normal', hex: p.propLabelNormal },
+    { name: 'Properties.Label_Selected', hex: p.propLabelSelected },
+    // Translucent — opaque #191919 turned the screen pitch black behind a
+    // modal window, hiding the parent UI completely. The palette's
+    // `modalBg` value tracks the right alpha for each theme.
+    { name: 'ModalBackground', hex: p.modalBg },
+    { name: 'TooltipText', hex: p.tooltipText },
+    { name: 'Category.Line.Text', hex: p.catLineText },
+    { name: 'Category.Line.Text_Hover', hex: p.catLineTextHover },
+    { name: 'Category.Line.Button_Hover', hex: p.catLineButtonHover },
+    { name: 'Category.Line.Button_Selected', hex: p.catLineButtonSelected },
+    { name: 'Category.LineAlt.Text_Selected', hex: p.catLineAltTextSelected },
+    { name: 'Category.LineAlt.Button', hex: p.catLineAltButton },
+  ];
+  for (const c of out) Object.freeze(c);
+  return Object.freeze(out);
+}
+
+export function bakedRow500(p: Palette): readonly BakedColor[] {
+  const out: BakedColor[] = [
+    { name: 'Pad500_0', hex: '#000000' },
+    { name: 'Pad500_1', hex: '#000000' },
+    { name: 'Button.Down', hex: p.textNormal },
+    { name: 'Button.Disabled', hex: p.textDisabled },
+    { name: 'Tab.Active.Down', hex: p.textNormal },
+    { name: 'Tab.Active.Disabled', hex: p.textDisabled },
+    { name: 'Tab.Inactive.Down', hex: p.textNormal },
+    { name: 'Tab.Inactive.Disabled', hex: p.textDisabled },
+    { name: 'Label.Dark', hex: p.textNormal },
+    { name: 'Label.Highlight', hex: p.textOnDark },
+    { name: 'Tree.Hover', hex: p.treeHover },
+    { name: 'Tree.Selected', hex: p.treeSelected },
+    { name: 'Properties.Line_Hover', hex: p.propLineHover },
+    { name: 'Properties.Title', hex: p.propTitle },
+    { name: 'Properties.Column_Hover', hex: p.propColumnHover },
+    { name: 'Properties.Border', hex: p.propBorder },
+    { name: 'Properties.Label_Hover', hex: p.propLabelHover },
+    { name: 'Pad500_17', hex: '#000000' },
+    { name: 'Category.Header', hex: p.catHeader },
+    { name: 'Category.Header_Closed', hex: p.catHeaderClosed },
+    { name: 'Category.Line.Text_Selected', hex: p.catLineTextSelected },
+    { name: 'Category.Line.Button', hex: p.catLineButton },
+    { name: 'Category.LineAlt.Text', hex: p.catLineAltText },
+    { name: 'Category.LineAlt.Text_Hover', hex: p.catLineAltTextHover },
+    { name: 'Category.LineAlt.Button_Hover', hex: p.catLineAltButtonHover },
+    { name: 'Category.LineAlt.Button_Selected', hex: p.catLineAltButtonSelected },
+  ];
+  for (const c of out) Object.freeze(c);
+  return Object.freeze(out);
+}
+
+// Back-compat exports — pre-theming code reads these directly.
+export const BAKED_ROW_508: readonly BakedColor[] = bakedRow508(LIGHT_PALETTE);
+export const BAKED_ROW_500: readonly BakedColor[] = bakedRow500(LIGHT_PALETTE);

@@ -286,6 +286,46 @@ s.setFloatValue(50);
 s.onValueChanged.on((e) => console.log('value →', (e.controlCaller as Gwen.HorizontalSlider).getFloatValue()));
 ```
 
+### Switch between Light and Dark skin
+
+Two stock palettes ship — `LIGHT_PALETTE` (default) and `DARK_PALETTE`. `Skin.setTheme(palette)` re-paints the atlas in place and rebuilds `skin.colors`; the texture handle stays stable so existing controls keep working without reconstruction.
+
+```ts
+skin.setTheme(Gwen.DARK_PALETTE);
+canvas.redraw();
+```
+
+To wire it up to a menu (e.g. Help → Skin):
+
+```ts
+const skinSub = helpMenu.addItem('Skin');
+skinSub.getMenu().setShowIconMargin(true);
+const lightItem = skinSub.getMenu().addItem('Light');
+const darkItem  = skinSub.getMenu().addItem('Dark');
+lightItem.setCheckable(true);
+darkItem.setCheckable(true);
+lightItem.setChecked(true);
+const apply = (palette: Gwen.Palette, light: boolean): void => {
+  skin.setTheme(palette);
+  lightItem.setChecked(light);
+  darkItem.setChecked(!light);
+  canvas.redraw();
+};
+lightItem.onMenuItemSelected.on(() => apply(Gwen.LIGHT_PALETTE, true));
+darkItem.onMenuItemSelected.on(() => apply(Gwen.DARK_PALETTE, false));
+```
+
+Custom themes — `Palette` is a flat record of colour strings (`canvasBg`, `panelFill`, `buttonNormalTop/Bot`, `selection`, `textNormal`, etc. — see `src/skin/AtlasRegions.ts`). Spread one of the stock palettes and tweak just the fields you want:
+
+```ts
+const accent: Gwen.Palette = { ...Gwen.DARK_PALETTE, accent: '#ff7700' };
+skin.setTheme(accent);
+```
+
+Notes:
+- Default text colour on every `Text` flows from `skin.colors.label.default`, so labels and other text-bearing controls re-tone automatically. Controls that explicitly call `setTextColor` keep their override.
+- The canvas background (`canvas.setBackgroundColor`) is *not* updated by `setTheme` — it's caller-managed. The demo wires it up alongside the menu items so the empty viewport area follows the theme.
+
 ### Build a toolbar with `ActionBar`
 
 `ActionBar` is the flexible toolbar — horizontal "quick action" bar (Bold / Italic / fonts) or vertical "tool palette" (Photoshop-style icon column). Use `addButton(text, icon?)` for the common case, `addSeparator()` between groups, and `addItem(ctrl)` to drop in arbitrary controls (most often a `ComboBox`).

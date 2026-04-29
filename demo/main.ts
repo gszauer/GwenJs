@@ -31,7 +31,17 @@ skin.init();
 const canvas = new Gwen.Canvas(skin, htmlCanvas);
 canvas.setBounds(0, 0, htmlCanvas.clientWidth, htmlCanvas.clientHeight);
 canvas.setDrawBackground(true);
-canvas.setBackgroundColor(Gwen.color(122, 144, 144, 255));
+// Helper that translates the active palette's `canvasBg` (a hex / rgba
+// string) into the byte Color the renderer expects. Lets the demo swap
+// the canvas backdrop in lock-step with skin theme switches.
+function applyCanvasBgFromTheme(): void {
+  const hex = skin.getPalette().canvasBg;
+  let h = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16);
+  canvas.setBackgroundColor(Gwen.color((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff, 255));
+}
+applyCanvasBgFromTheme();
 canvas.redraw();
 
 document.getElementById('boot-msg')?.remove();
@@ -143,6 +153,28 @@ const menuStrip = new Gwen.MenuStrip(canvas);
   sub.getMenu().addItem('Second');
   sub.getMenu().addItem('Third');
   void about;
+
+  // Skin submenu — Light / Dark, currently-active item carries a
+  // check in the icon gutter. Theme switch repaints the atlas in
+  // place so every existing control picks up new colors on next
+  // render — no reconstruction needed.
+  const skinSub = subMenu.getMenu().addItem('Skin');
+  skinSub.getMenu().setShowIconMargin(true);
+  const lightItem = skinSub.getMenu().addItem('Light');
+  const darkItem = skinSub.getMenu().addItem('Dark');
+  lightItem.setCheckable(true);
+  darkItem.setCheckable(true);
+  lightItem.setChecked(true); // Light is the default.
+  const applyTheme = (palette: Gwen.Palette, light: boolean): void => {
+    skin.setTheme(palette);
+    applyCanvasBgFromTheme();
+    lightItem.setChecked(light);
+    darkItem.setChecked(!light);
+    canvas.redraw();
+    log(`Skin: ${light ? 'Light' : 'Dark'}`);
+  };
+  lightItem.onMenuItemSelected.on(() => applyTheme(Gwen.LIGHT_PALETTE, true));
+  darkItem.onMenuItemSelected.on(() => applyTheme(Gwen.DARK_PALETTE, false));
 }
 
 // ---------------------------------------------------------------------------

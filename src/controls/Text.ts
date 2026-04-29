@@ -27,6 +27,12 @@ export class Text extends Base {
   // "override" convention: alpha 0 means "not set" so the base color
   // wins.
   private _color: Color = color(0, 0, 0, 255);
+  // Whether `_color` was set explicitly by `setTextColor`. When false,
+  // `render()` reads `skin.colors.label.default` instead — that lets a
+  // theme switch on the active palette propagate to every Text
+  // instance without reaching back through every control's
+  // construction path.
+  private _colorIsExplicit = false;
   private _colorOverride: Color = color(255, 255, 255, 0);
 
   private _wrap = false;
@@ -83,6 +89,7 @@ export class Text extends Base {
 
   setTextColor(c: Color): void {
     this._color = { r: c.r, g: c.g, b: c.b, a: c.a };
+    this._colorIsExplicit = true;
     this.redraw();
   }
 
@@ -271,7 +278,12 @@ export class Text extends Base {
     this.resolveFont();
     const font = this._font;
     if (!font) return;
-    const c = this._colorOverride.a === 0 ? this._color : this._colorOverride;
+    // Default color tracks the active palette via `skin.colors.label.default`
+    // when nothing has been set explicitly. This is what makes dark mode
+    // text auto-flip to light: every Text without an explicit color
+    // inherits the theme's body-text colour at render time.
+    const baseColor = this._colorIsExplicit ? this._color : skin.colors.label.default;
+    const c = this._colorOverride.a === 0 ? baseColor : this._colorOverride;
     skin.renderer.setDrawColor(c);
     const pad = this.getPadding();
     skin.renderer.renderText(font, point(pad.left, pad.top), this._text);

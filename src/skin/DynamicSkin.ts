@@ -21,12 +21,37 @@ import type { Texture } from '../renderer/Texture';
 import { texture } from '../renderer/Texture';
 import type { WebGL2Renderer } from '../renderer/WebGL2Renderer';
 import {
-  BAKED_ROW_500,
-  BAKED_ROW_508,
-  PALETTE,
+  bakedRow500,
+  bakedRow508,
+  LIGHT_PALETTE,
   REGIONS,
+  type BakedColor,
+  type Palette,
   type RegionDescriptor,
 } from './AtlasRegions';
+
+// ---------- Active palette (mutable; swapped via DynamicSkin.setTheme) ----------
+//
+// All module-level paint helpers below read `activePalette.X`. Theme
+// switching writes a new value here and re-runs the paint pass. The
+// alternative (threading a `Palette` argument through every helper)
+// would balloon the diff for the same effect — there's only ever one
+// active skin at a time, so a module-level ref is fine.
+//
+// `activeRow500` / `activeRow508` are derived from `activePalette` and
+// kept in sync by `setActivePalette` — they back the strip baking
+// (`bakeColorStrip`) and the runtime `SkinColors` build
+// (`buildSkinColors`).
+
+let activePalette: Palette = LIGHT_PALETTE;
+let activeRow500: readonly BakedColor[] = bakedRow500(LIGHT_PALETTE);
+let activeRow508: readonly BakedColor[] = bakedRow508(LIGHT_PALETTE);
+
+function setActivePalette(p: Palette): void {
+  activePalette = p;
+  activeRow500 = bakedRow500(p);
+  activeRow508 = bakedRow508(p);
+}
 
 // ---------- Public types ----------
 
@@ -289,8 +314,8 @@ function drawWindowControl(
   let bot: string;
   let glyphColor = '#ffffff';
   if (state === 'normal') {
-    top = PALETTE.titleActiveTop;
-    bot = PALETTE.titleActiveBottom;
+    top = activePalette.titleActiveTop;
+    bot = activePalette.titleActiveBottom;
   } else if (state === 'hover') {
     top = '#a4d4f0';
     bot = '#5cb0e0';
@@ -404,20 +429,20 @@ function drawSliderThumb(
   let bot: string;
   let border: string;
   if (state === 'normal') {
-    top = PALETTE.buttonNormalTop;
-    bot = PALETTE.buttonNormalBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonNormalTop;
+    bot = activePalette.buttonNormalBot;
+    border = activePalette.buttonBorder;
   } else if (state === 'hover') {
-    top = PALETTE.buttonHoverTop;
-    bot = PALETTE.buttonHoverBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonHoverTop;
+    bot = activePalette.buttonHoverBot;
+    border = activePalette.buttonBorder;
   } else if (state === 'down') {
-    top = PALETTE.buttonPressedTop;
-    bot = PALETTE.buttonPressedBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonPressedTop;
+    bot = activePalette.buttonPressedBot;
+    border = activePalette.buttonBorder;
   } else {
-    top = PALETTE.buttonDisabled;
-    bot = PALETTE.buttonDisabled;
+    top = activePalette.buttonDisabled;
+    bot = activePalette.buttonDisabled;
     border = '#b0b0b0';
   }
   drawPatch(ctx, x + 1, y + 1, 13, 13, {
@@ -435,7 +460,7 @@ function drawComboButton(
   state: 'normal' | 'hover' | 'down' | 'disabled',
 ): void {
   drawSliderThumb(ctx, x, y, state);
-  const arrowColor = state === 'disabled' ? PALETTE.textDisabled : PALETTE.textNormal;
+  const arrowColor = state === 'disabled' ? activePalette.textDisabled : activePalette.textNormal;
   drawTriangle(ctx, x, y, 'bottom', arrowColor);
 }
 
@@ -461,27 +486,27 @@ function drawScrollerArrowButton(
   let bot: string;
   let border: string;
   if (state === 'normal') {
-    top = PALETTE.buttonNormalTop;
-    bot = PALETTE.buttonNormalBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonNormalTop;
+    bot = activePalette.buttonNormalBot;
+    border = activePalette.buttonBorder;
   } else if (state === 'hover') {
-    top = PALETTE.buttonHoverTop;
-    bot = PALETTE.buttonHoverBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonHoverTop;
+    bot = activePalette.buttonHoverBot;
+    border = activePalette.buttonBorder;
   } else if (state === 'down') {
-    top = PALETTE.buttonPressedTop;
-    bot = PALETTE.buttonPressedBot;
-    border = PALETTE.buttonBorder;
+    top = activePalette.buttonPressedTop;
+    bot = activePalette.buttonPressedBot;
+    border = activePalette.buttonBorder;
   } else {
-    top = PALETTE.buttonDisabled;
-    bot = PALETTE.buttonDisabled;
+    top = activePalette.buttonDisabled;
+    bot = activePalette.buttonDisabled;
     border = '#b0b0b0';
   }
   drawPatch(ctx, x, y, 15, 15, {
     fill: vGradient(ctx, x, y, 15, top, bot),
     stroke: border,
   });
-  const arrowColor = state === 'disabled' ? PALETTE.textDisabled : PALETTE.textNormal;
+  const arrowColor = state === 'disabled' ? activePalette.textDisabled : activePalette.textNormal;
   const dir: ArrowDir = dirIdx === 0 ? 'left' : dirIdx === 1 ? 'top' : dirIdx === 2 ? 'right' : 'bottom';
   drawTriangle(ctx, x, y, dir, arrowColor);
 }
@@ -494,31 +519,31 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
   // ---- Helpers used by multiple cases ----
   const buttonNormal = (): void => {
     drawPatch(ctx, x, y, w, h, {
-      fill: vGradient(ctx, x, y, h, PALETTE.buttonNormalTop, PALETTE.buttonNormalBot),
-      stroke: PALETTE.buttonBorder,
+      fill: vGradient(ctx, x, y, h, activePalette.buttonNormalTop, activePalette.buttonNormalBot),
+      stroke: activePalette.buttonBorder,
       borderRadius: 3,
       bevelLight: 'rgba(255,255,255,0.5)',
     });
   };
   const buttonHover = (): void => {
     drawPatch(ctx, x, y, w, h, {
-      fill: vGradient(ctx, x, y, h, PALETTE.buttonHoverTop, PALETTE.buttonHoverBot),
-      stroke: PALETTE.accent,
+      fill: vGradient(ctx, x, y, h, activePalette.buttonHoverTop, activePalette.buttonHoverBot),
+      stroke: activePalette.accent,
       borderRadius: 3,
       bevelLight: 'rgba(255,255,255,0.6)',
     });
   };
   const buttonDown = (): void => {
     drawPatch(ctx, x, y, w, h, {
-      fill: vGradient(ctx, x, y, h, PALETTE.buttonPressedTop, PALETTE.buttonPressedBot),
-      stroke: PALETTE.buttonBorder,
+      fill: vGradient(ctx, x, y, h, activePalette.buttonPressedTop, activePalette.buttonPressedBot),
+      stroke: activePalette.buttonBorder,
       borderRadius: 3,
       bevelDark: 'rgba(0,0,0,0.15)',
     });
   };
   const buttonDisabled = (): void => {
     drawPatch(ctx, x, y, w, h, {
-      fill: PALETTE.buttonDisabled,
+      fill: activePalette.buttonDisabled,
       stroke: '#b0b0b0',
       borderRadius: 3,
     });
@@ -536,23 +561,23 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     }
     case 'Tooltip': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.tooltipBg,
-        stroke: PALETTE.tooltipBorder,
+        fill: activePalette.tooltipBg,
+        stroke: activePalette.tooltipBorder,
         borderRadius: 2,
       });
       return;
     }
     case 'StatusBar': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.statusBarBg,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.statusBarBg,
+        stroke: activePalette.panelBorder,
         bevelLight: 'rgba(255,255,255,0.5)',
       });
       return;
     }
     case 'Selection': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.selection,
+        fill: activePalette.selection,
         borderRadius: 2,
       });
       return;
@@ -561,32 +586,32 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Panels ----
     case 'Panel.Normal': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelFill,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelFill,
+        stroke: activePalette.panelBorder,
         borderRadius: 4,
       });
       return;
     }
     case 'Panel.Bright': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelBright,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelBright,
+        stroke: activePalette.panelBorder,
         borderRadius: 4,
       });
       return;
     }
     case 'Panel.Dark': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelDark,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelDark,
+        stroke: activePalette.panelBorder,
         borderRadius: 4,
       });
       return;
     }
     case 'Panel.Highlight': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelHighlight,
-        stroke: PALETTE.accent,
+        fill: activePalette.panelHighlight,
+        stroke: activePalette.accent,
         borderRadius: 4,
       });
       return;
@@ -598,7 +623,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       const inactive = name === 'Window.Inactive';
       // Body.
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelFill,
+        fill: activePalette.panelFill,
         stroke: inactive ? '#909090' : '#205c90',
         borderRadius: 6,
       });
@@ -606,8 +631,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // band lines up exactly with the WindowControl's Dragger. No
       // separator line at the bottom (previously baked a 1px stripe
       // that visibly spanned the window).
-      const titleTop = inactive ? PALETTE.titleInactiveTop : PALETTE.titleActiveTop;
-      const titleBot = inactive ? PALETTE.titleInactiveBot : PALETTE.titleActiveBottom;
+      const titleTop = inactive ? activePalette.titleInactiveTop : activePalette.titleActiveTop;
+      const titleBot = inactive ? activePalette.titleInactiveBot : activePalette.titleActiveBottom;
       ctx.save();
       roundRectPath(ctx, x + 1, y + 1, w - 2, 26, 5);
       ctx.clip();
@@ -634,67 +659,67 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Checkbox ----
     case 'Checkbox.Active.Normal': {
       drawPatch(ctx, x, y, 15, 15, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.buttonBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.buttonBorder,
       });
       return;
     }
     case 'Checkbox.Active.Checked': {
       drawPatch(ctx, x, y, 15, 15, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.buttonBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.buttonBorder,
       });
-      drawCheckmark(ctx, x, y, PALETTE.textNormal);
+      drawCheckmark(ctx, x, y, activePalette.textNormal);
       return;
     }
     case 'Checkbox.Disabled.Normal': {
       drawPatch(ctx, x, y, 15, 15, {
-        fill: PALETTE.buttonDisabled,
+        fill: activePalette.buttonDisabled,
         stroke: '#b0b0b0',
       });
       return;
     }
     case 'Checkbox.Disabled.Checked': {
       drawPatch(ctx, x, y, 15, 15, {
-        fill: PALETTE.buttonDisabled,
+        fill: activePalette.buttonDisabled,
         stroke: '#b0b0b0',
       });
-      drawCheckmark(ctx, x, y, PALETTE.textDisabled);
+      drawCheckmark(ctx, x, y, activePalette.textDisabled);
       return;
     }
 
     // ---- Radio button ----
     case 'RadioButton.Active.Normal': {
-      drawCircleFrame(ctx, x, y, PALETTE.textboxBg, PALETTE.buttonBorder);
+      drawCircleFrame(ctx, x, y, activePalette.textboxBg, activePalette.buttonBorder);
       return;
     }
     case 'RadioButton.Active.Checked': {
-      drawCircleFrame(ctx, x, y, PALETTE.textboxBg, PALETTE.buttonBorder);
-      drawRadioDot(ctx, x, y, PALETTE.textNormal);
+      drawCircleFrame(ctx, x, y, activePalette.textboxBg, activePalette.buttonBorder);
+      drawRadioDot(ctx, x, y, activePalette.textNormal);
       return;
     }
     case 'RadioButton.Disabled.Normal': {
-      drawCircleFrame(ctx, x, y, PALETTE.buttonDisabled, '#b0b0b0');
+      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, '#b0b0b0');
       return;
     }
     case 'RadioButton.Disabled.Checked': {
-      drawCircleFrame(ctx, x, y, PALETTE.buttonDisabled, '#b0b0b0');
-      drawRadioDot(ctx, x, y, PALETTE.textDisabled);
+      drawCircleFrame(ctx, x, y, activePalette.buttonDisabled, '#b0b0b0');
+      drawRadioDot(ctx, x, y, activePalette.textDisabled);
       return;
     }
 
     // ---- Text box ----
     case 'TextBox.Normal': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.textboxBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.textboxBorder,
       });
       return;
     }
     case 'TextBox.Focus': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.textboxFocused,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.textboxFocused,
       });
       // Inner highlight to indicate focus.
       ctx.fillStyle = 'rgba(72,144,196,0.12)';
@@ -703,7 +728,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     }
     case 'TextBox.Disabled': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.buttonDisabled,
+        fill: activePalette.buttonDisabled,
         stroke: '#b0b0b0',
       });
       return;
@@ -712,7 +737,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Menu ----
     case 'Menu.Strip': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.menuStripBg,
+        fill: activePalette.menuStripBg,
         bevelLight: '#ffffff',
         bevelDark: '#a0a0a0',
       });
@@ -721,47 +746,49 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Menu.BackgroundWithMargin':
     case 'Menu.Background': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelFill,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelFill,
+        stroke: activePalette.panelBorder,
       });
       if (name === 'Menu.BackgroundWithMargin') {
         // 24px left gutter for icons / accelerators.
         ctx.fillStyle = '#dcdcdc';
         ctx.fillRect(x + 1, y + 1, 22, h - 2);
-        ctx.fillStyle = PALETTE.panelBorder;
+        ctx.fillStyle = activePalette.panelBorder;
         ctx.fillRect(x + 23, y + 1, 1, h - 2);
       }
       return;
     }
     case 'Menu.Hover': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.menuHoverBg,
+        fill: activePalette.menuHoverBg,
         borderRadius: 2,
       });
       return;
     }
     case 'Menu.RightArrow': {
-      drawTriangle(ctx, x, y, 'right', PALETTE.textNormal);
+      drawTriangle(ctx, x, y, 'right', activePalette.textNormal);
       return;
     }
     case 'Menu.Check': {
-      drawCheckmark(ctx, x, y, PALETTE.textNormal);
+      drawCheckmark(ctx, x, y, activePalette.textNormal);
       return;
     }
 
     // ---- Tab ----
     case 'Tab.Control': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelFill,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelFill,
+        stroke: activePalette.panelBorder,
         borderRadius: 3,
       });
       return;
     }
     case 'Tab.HeaderBar': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, '#e8e8e8', '#cfcfcf'),
-        stroke: PALETTE.panelBorder,
+        // Was hardcoded #e8e8e8 / #cfcfcf. Pulling from the palette so
+        // dark mode picks up the darker tab-header gradient.
+        fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
+        stroke: activePalette.panelBorder,
       });
       return;
     }
@@ -770,8 +797,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Tab.Left.Active':
     case 'Tab.Right.Active': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, PALETTE.tabActiveTop, PALETTE.tabActiveBot),
-        stroke: PALETTE.panelBorder,
+        fill: vGradient(ctx, x, y, h, activePalette.tabActiveTop, activePalette.tabActiveBot),
+        stroke: activePalette.panelBorder,
         borderRadius: 3,
       });
       return;
@@ -781,8 +808,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Tab.Left.Inactive':
     case 'Tab.Right.Inactive': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, PALETTE.tabInactiveTop, PALETTE.tabInactiveBot),
-        stroke: PALETTE.panelBorder,
+        fill: vGradient(ctx, x, y, h, activePalette.tabInactiveTop, activePalette.tabInactiveBot),
+        stroke: activePalette.panelBorder,
         borderRadius: 3,
       });
       return;
@@ -791,8 +818,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Tree ----
     case 'Tree.Background': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.panelBorder,
       });
       return;
     }
@@ -803,10 +830,10 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // the whole region 1:1 — renders the [+] at the top-left of
       // its bounds (visibly above the title text and shifted left).
       drawPatch(ctx, x + 3, y + 3, 9, 9, {
-        fill: PALETTE.textboxBg,
+        fill: activePalette.textboxBg,
         stroke: '#808080',
       });
-      ctx.fillStyle = PALETTE.textNormal;
+      ctx.fillStyle = activePalette.textNormal;
       ctx.fillRect(x + 5, y + 7, 5, 1);
       ctx.fillRect(x + 7, y + 5, 1, 5);
       return;
@@ -814,10 +841,10 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Tree.Minus': {
       // Same centering offset as Tree.Plus (see above).
       drawPatch(ctx, x + 3, y + 3, 9, 9, {
-        fill: PALETTE.textboxBg,
+        fill: activePalette.textboxBg,
         stroke: '#808080',
       });
-      ctx.fillStyle = PALETTE.textNormal;
+      ctx.fillStyle = activePalette.textNormal;
       ctx.fillRect(x + 5, y + 7, 5, 1);
       return;
     }
@@ -853,8 +880,8 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Scroller.TrackV':
     case 'Scroller.TrackH': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.scrollTrack,
-        stroke: PALETTE.scrollTrackBorder,
+        fill: activePalette.scrollTrack,
+        stroke: activePalette.scrollTrackBorder,
       });
       return;
     }
@@ -863,9 +890,9 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       const horiz = name === 'Scroller.ButtonH_Normal';
       drawPatch(ctx, x, y, w, h, {
         fill: horiz
-          ? vGradient(ctx, x, y, h, PALETTE.scrollThumbTop, PALETTE.scrollThumbBot)
-          : hGradient(ctx, x, y, w, PALETTE.scrollThumbTop, PALETTE.scrollThumbBot),
-        stroke: PALETTE.scrollThumbBorder,
+          ? vGradient(ctx, x, y, h, activePalette.scrollThumbTop, activePalette.scrollThumbBot)
+          : hGradient(ctx, x, y, w, activePalette.scrollThumbTop, activePalette.scrollThumbBot),
+        stroke: activePalette.scrollThumbBorder,
         borderRadius: 2,
       });
       return;
@@ -875,9 +902,9 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       const horiz = name === 'Scroller.ButtonH_Hover';
       drawPatch(ctx, x, y, w, h, {
         fill: horiz
-          ? vGradient(ctx, x, y, h, PALETTE.buttonHoverTop, PALETTE.buttonHoverBot)
-          : hGradient(ctx, x, y, w, PALETTE.buttonHoverTop, PALETTE.buttonHoverBot),
-        stroke: PALETTE.accent,
+          ? vGradient(ctx, x, y, h, activePalette.buttonHoverTop, activePalette.buttonHoverBot)
+          : hGradient(ctx, x, y, w, activePalette.buttonHoverTop, activePalette.buttonHoverBot),
+        stroke: activePalette.accent,
         borderRadius: 2,
       });
       return;
@@ -887,9 +914,9 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       const horiz = name === 'Scroller.ButtonH_Down';
       drawPatch(ctx, x, y, w, h, {
         fill: horiz
-          ? vGradient(ctx, x, y, h, PALETTE.buttonPressedTop, PALETTE.buttonPressedBot)
-          : hGradient(ctx, x, y, w, PALETTE.buttonPressedTop, PALETTE.buttonPressedBot),
-        stroke: PALETTE.buttonBorder,
+          ? vGradient(ctx, x, y, h, activePalette.buttonPressedTop, activePalette.buttonPressedBot)
+          : hGradient(ctx, x, y, w, activePalette.buttonPressedTop, activePalette.buttonPressedBot),
+        stroke: activePalette.buttonBorder,
         borderRadius: 2,
       });
       return;
@@ -897,7 +924,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Scroller.ButtonV_Disabled':
     case 'Scroller.ButtonH_Disabled': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.buttonDisabled,
+        fill: activePalette.buttonDisabled,
         stroke: '#b0b0b0',
         borderRadius: 2,
       });
@@ -907,14 +934,14 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- Input.ListBox ----
     case 'Input.ListBox.Background': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.panelBorder,
       });
       return;
     }
     case 'Input.ListBox.Hovered': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.buttonHoverBot,
+        fill: activePalette.buttonHoverBot,
       });
       return;
     }
@@ -923,15 +950,17 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       return;
     }
     case 'Input.ListBox.OddLine': {
+      // Alternating zebra stripe — slightly off the base panel fill so
+      // it shows up against the textbox background in both themes.
       drawPatch(ctx, x, y, w, h, {
-        fill: '#f4f4f4',
+        fill: activePalette.panelBright,
       });
       return;
     }
     case 'Input.ListBox.EvenLineSelected':
     case 'Input.ListBox.OddLineSelected': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.selection,
+        fill: activePalette.selection,
       });
       return;
     }
@@ -947,27 +976,27 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'Input.ComboBox.Button.Disabled': drawComboButton(ctx, x, y, 'disabled'); return;
 
     // ---- Input.UpDown ----
-    case 'Input.UpDown.Up.Normal': drawSpinnerArrow(ctx, x, y, true, PALETTE.textNormal); return;
-    case 'Input.UpDown.Up.Hover': drawSpinnerArrow(ctx, x, y, true, PALETTE.accent); return;
+    case 'Input.UpDown.Up.Normal': drawSpinnerArrow(ctx, x, y, true, activePalette.textNormal); return;
+    case 'Input.UpDown.Up.Hover': drawSpinnerArrow(ctx, x, y, true, activePalette.accent); return;
     case 'Input.UpDown.Up.Down': drawSpinnerArrow(ctx, x, y, true, '#205c90'); return;
-    case 'Input.UpDown.Up.Disabled': drawSpinnerArrow(ctx, x, y, true, PALETTE.textDisabled); return;
-    case 'Input.UpDown.Down.Normal': drawSpinnerArrow(ctx, x, y, false, PALETTE.textNormal); return;
-    case 'Input.UpDown.Down.Hover': drawSpinnerArrow(ctx, x, y, false, PALETTE.accent); return;
+    case 'Input.UpDown.Up.Disabled': drawSpinnerArrow(ctx, x, y, true, activePalette.textDisabled); return;
+    case 'Input.UpDown.Down.Normal': drawSpinnerArrow(ctx, x, y, false, activePalette.textNormal); return;
+    case 'Input.UpDown.Down.Hover': drawSpinnerArrow(ctx, x, y, false, activePalette.accent); return;
     case 'Input.UpDown.Down.Down': drawSpinnerArrow(ctx, x, y, false, '#205c90'); return;
-    case 'Input.UpDown.Down.Disabled': drawSpinnerArrow(ctx, x, y, false, PALETTE.textDisabled); return;
+    case 'Input.UpDown.Down.Disabled': drawSpinnerArrow(ctx, x, y, false, activePalette.textDisabled); return;
 
     // ---- ProgressBar ----
     case 'ProgressBar.Back': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.progressBack,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.progressBack,
+        stroke: activePalette.panelBorder,
         borderRadius: 2,
       });
       return;
     }
     case 'ProgressBar.Front': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, '#33e858', PALETTE.progressFront),
+        fill: vGradient(ctx, x, y, h, '#33e858', activePalette.progressFront),
         stroke: '#008818',
         borderRadius: 2,
       });
@@ -987,16 +1016,16 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     // ---- CategoryList ----
     case 'CategoryList.Outer': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.panelFill,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.panelFill,
+        stroke: activePalette.panelBorder,
         borderRadius: 4,
       });
       return;
     }
     case 'CategoryList.Inner': {
       drawPatch(ctx, x, y, w, h, {
-        fill: PALETTE.textboxBg,
-        stroke: PALETTE.panelBorder,
+        fill: activePalette.textboxBg,
+        stroke: activePalette.panelBorder,
       });
       // 21px header gutter (matches m=[8,21,8,8]). The gradient + dark
       // separator must live ENTIRELY inside the top 9-slice patch
@@ -1005,7 +1034,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
       // the dark line across the body. We paint the separator at row 19
       // and leave row 20 as the textbox-white fill so the boundary
       // between top and center patches blends white-to-white.
-      ctx.fillStyle = vGradient(ctx, x + 1, y + 1, 18, PALETTE.titleActiveTop, PALETTE.titleActiveBottom);
+      ctx.fillStyle = vGradient(ctx, x + 1, y + 1, 18, activePalette.titleActiveTop, activePalette.titleActiveBottom);
       ctx.fillRect(x + 1, y + 1, w - 2, 18);
       ctx.fillStyle = '#205c90';
       ctx.fillRect(x + 1, y + 19, w - 2, 1);
@@ -1013,7 +1042,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     }
     case 'CategoryList.Header': {
       drawPatch(ctx, x, y, w, h, {
-        fill: vGradient(ctx, x, y, h, PALETTE.titleActiveTop, PALETTE.titleActiveBottom),
+        fill: vGradient(ctx, x, y, h, activePalette.titleActiveTop, activePalette.titleActiveBottom),
         stroke: '#205c90',
         borderRadius: 3,
       });
@@ -1024,7 +1053,7 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
     case 'GroupBox': {
       drawPatch(ctx, x, y, w, h, {
         fill: 'rgba(0,0,0,0)',
-        stroke: PALETTE.panelBorder,
+        stroke: activePalette.panelBorder,
         borderRadius: 3,
       });
       return;
@@ -1043,12 +1072,16 @@ function drawRegion(ctx: AnyCtx, d: RegionDescriptor): void {
 
 export class DynamicSkin {
   readonly regions: ReadonlyMap<string, RegionInfo>;
-  readonly colors: SkinColors;
+  // `colors` is mutable across `setTheme` so callers can keep one
+  // reference to the skin object and pick up new colors after a
+  // theme switch. Each `paint()` rebuilds the whole struct.
+  colors: SkinColors;
 
   private readonly renderer: WebGL2Renderer;
   private readonly tex: Texture = texture('DynamicSkin');
   private readonly regionMap = new Map<string, RegionInfo>();
   private initialized = false;
+  private currentPalette: Palette = LIGHT_PALETTE;
 
   constructor(renderer: WebGL2Renderer) {
     this.renderer = renderer;
@@ -1059,6 +1092,38 @@ export class DynamicSkin {
   init(): void {
     if (this.initialized) return;
     this.initialized = true;
+    // Region map only needs populating once; positions are static.
+    for (const d of REGIONS) this.recordRegion(d);
+    this.paint();
+  }
+
+  /**
+   * Swap the active palette and re-paint the atlas. The texture
+   * handle stays stable (callers' references remain valid); only the
+   * pixels and the `colors` struct change. No-op if the same palette
+   * is already active.
+   */
+  setTheme(palette: Palette): void {
+    if (this.currentPalette === palette) return;
+    this.currentPalette = palette;
+    if (this.initialized) this.paint();
+    else {
+      // Theme set before init — defer painting; init() will pick up
+      // the current palette.
+      setActivePalette(palette);
+      this.colors = buildSkinColors();
+    }
+  }
+
+  getPalette(): Palette {
+    return this.currentPalette;
+  }
+
+  // Paint the offscreen atlas canvas using `currentPalette` and
+  // re-upload to the GPU. Called once from `init()` and again from
+  // every `setTheme()` after init.
+  private paint(): void {
+    setActivePalette(this.currentPalette);
 
     const canvas = makeAtlasCanvas();
     const ctx = canvas.getContext('2d') as AnyCtx | null;
@@ -1068,25 +1133,25 @@ export class DynamicSkin {
     ctx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
     ctx.imageSmoothingEnabled = false;
 
-    // Paint each region.
     for (const d of REGIONS) {
-      // Skip out-of-bounds cells (Scroller.Button.Disabled[*] live at x=528).
-      if (d.x >= ATLAS_SIZE || d.y >= ATLAS_SIZE) {
-        this.recordRegion(d);
-        continue;
-      }
+      if (d.x >= ATLAS_SIZE || d.y >= ATLAS_SIZE) continue;
       drawRegion(ctx, d);
-      this.recordRegion(d);
     }
 
     // Bake the palette strip GWEN reads via PixelColour (TexturedBase.h:297).
     bakeColorStrip(ctx);
 
-    // Upload to GPU.
+    // Upload to GPU. `loadTextureFromSource` reuses the existing
+    // WebGLTexture handle stored on `this.tex`, so any control that
+    // already grabbed `getTexture()` keeps a valid reference.
     this.renderer.loadTextureFromSource(this.tex, canvas as TexImageSource);
     this.tex.width = ATLAS_SIZE;
     this.tex.height = ATLAS_SIZE;
     this.tex.name = 'DynamicSkin';
+
+    // Rebuild the `SkinColors` struct so `skin.colors.X` reflects the
+    // new palette on the next read.
+    this.colors = buildSkinColors();
   }
 
   getTexture(): Texture {
@@ -1128,12 +1193,12 @@ export class DynamicSkin {
 }
 
 function bakeColorStrip(ctx: AnyCtx): void {
-  for (let n = 0; n < BAKED_ROW_508.length; n++) {
-    ctx.fillStyle = BAKED_ROW_508[n].hex;
+  for (let n = 0; n < activeRow508.length; n++) {
+    ctx.fillStyle = activeRow508[n].hex;
     ctx.fillRect(4 + 8 * n, 508, 8, 4);
   }
-  for (let n = 0; n < BAKED_ROW_500.length; n++) {
-    ctx.fillStyle = BAKED_ROW_500[n].hex;
+  for (let n = 0; n < activeRow500.length; n++) {
+    ctx.fillStyle = activeRow500[n].hex;
     ctx.fillRect(4 + 8 * n, 500, 8, 4);
   }
 }
@@ -1151,66 +1216,66 @@ function buildSkinColors(): SkinColors {
   };
   return {
     window: {
-      titleActive: find(BAKED_ROW_508, 'Window.TitleActive'),
-      titleInactive: find(BAKED_ROW_508, 'Window.TitleInactive'),
+      titleActive: find(activeRow508, 'Window.TitleActive'),
+      titleInactive: find(activeRow508, 'Window.TitleInactive'),
     },
     button: {
-      normal: find(BAKED_ROW_508, 'Button.Normal'),
-      hover: find(BAKED_ROW_508, 'Button.Hover'),
-      down: find(BAKED_ROW_500, 'Button.Down'),
-      disabled: find(BAKED_ROW_500, 'Button.Disabled'),
-      bright: parseHex(PALETTE.panelBright),
-      dark: parseHex(PALETTE.panelDark),
+      normal: find(activeRow508, 'Button.Normal'),
+      hover: find(activeRow508, 'Button.Hover'),
+      down: find(activeRow500, 'Button.Down'),
+      disabled: find(activeRow500, 'Button.Disabled'),
+      bright: parseHex(activePalette.panelBright),
+      dark: parseHex(activePalette.panelDark),
     },
     tab: {
-      active: { normal: find(BAKED_ROW_508, 'Tab.Active.Normal') },
-      inactive: { normal: find(BAKED_ROW_508, 'Tab.Inactive.Normal') },
+      active: { normal: find(activeRow508, 'Tab.Active.Normal') },
+      inactive: { normal: find(activeRow508, 'Tab.Inactive.Normal') },
     },
     label: {
-      default: find(BAKED_ROW_508, 'Label.Default'),
-      bright: find(BAKED_ROW_508, 'Label.Bright'),
-      dark: find(BAKED_ROW_500, 'Label.Dark'),
-      highlight: find(BAKED_ROW_500, 'Label.Highlight'),
+      default: find(activeRow508, 'Label.Default'),
+      bright: find(activeRow508, 'Label.Bright'),
+      dark: find(activeRow500, 'Label.Dark'),
+      highlight: find(activeRow500, 'Label.Highlight'),
     },
     tree: {
-      lines: find(BAKED_ROW_508, 'Tree.Lines'),
-      normal: find(BAKED_ROW_508, 'Tree.Normal'),
-      hover: find(BAKED_ROW_500, 'Tree.Hover'),
-      selected: find(BAKED_ROW_500, 'Tree.Selected'),
+      lines: find(activeRow508, 'Tree.Lines'),
+      normal: find(activeRow508, 'Tree.Normal'),
+      hover: find(activeRow500, 'Tree.Hover'),
+      selected: find(activeRow500, 'Tree.Selected'),
     },
     properties: {
-      line_normal: find(BAKED_ROW_508, 'Properties.Line_Normal'),
-      line_selected: find(BAKED_ROW_508, 'Properties.Line_Selected'),
-      line_hover: find(BAKED_ROW_500, 'Properties.Line_Hover'),
-      title: find(BAKED_ROW_500, 'Properties.Title'),
-      column_normal: find(BAKED_ROW_508, 'Properties.Column_Normal'),
-      column_selected: find(BAKED_ROW_508, 'Properties.Column_Selected'),
-      column_hover: find(BAKED_ROW_500, 'Properties.Column_Hover'),
-      label_normal: find(BAKED_ROW_508, 'Properties.Label_Normal'),
-      label_selected: find(BAKED_ROW_508, 'Properties.Label_Selected'),
-      label_hover: find(BAKED_ROW_500, 'Properties.Label_Hover'),
-      border: find(BAKED_ROW_500, 'Properties.Border'),
+      line_normal: find(activeRow508, 'Properties.Line_Normal'),
+      line_selected: find(activeRow508, 'Properties.Line_Selected'),
+      line_hover: find(activeRow500, 'Properties.Line_Hover'),
+      title: find(activeRow500, 'Properties.Title'),
+      column_normal: find(activeRow508, 'Properties.Column_Normal'),
+      column_selected: find(activeRow508, 'Properties.Column_Selected'),
+      column_hover: find(activeRow500, 'Properties.Column_Hover'),
+      label_normal: find(activeRow508, 'Properties.Label_Normal'),
+      label_selected: find(activeRow508, 'Properties.Label_Selected'),
+      label_hover: find(activeRow500, 'Properties.Label_Hover'),
+      border: find(activeRow500, 'Properties.Border'),
     },
-    modalBackground: find(BAKED_ROW_508, 'ModalBackground'),
-    tooltipText: find(BAKED_ROW_508, 'TooltipText'),
+    modalBackground: find(activeRow508, 'ModalBackground'),
+    tooltipText: find(activeRow508, 'TooltipText'),
     category: {
-      header: find(BAKED_ROW_500, 'Category.Header'),
-      header_closed: find(BAKED_ROW_500, 'Category.Header_Closed'),
+      header: find(activeRow500, 'Category.Header'),
+      header_closed: find(activeRow500, 'Category.Header_Closed'),
       line: {
-        text: find(BAKED_ROW_508, 'Category.Line.Text'),
-        text_hover: find(BAKED_ROW_508, 'Category.Line.Text_Hover'),
-        text_selected: find(BAKED_ROW_500, 'Category.Line.Text_Selected'),
-        button: find(BAKED_ROW_500, 'Category.Line.Button'),
-        button_hover: find(BAKED_ROW_508, 'Category.Line.Button_Hover'),
-        button_selected: find(BAKED_ROW_508, 'Category.Line.Button_Selected'),
+        text: find(activeRow508, 'Category.Line.Text'),
+        text_hover: find(activeRow508, 'Category.Line.Text_Hover'),
+        text_selected: find(activeRow500, 'Category.Line.Text_Selected'),
+        button: find(activeRow500, 'Category.Line.Button'),
+        button_hover: find(activeRow508, 'Category.Line.Button_Hover'),
+        button_selected: find(activeRow508, 'Category.Line.Button_Selected'),
       },
       line_alt: {
-        text: find(BAKED_ROW_500, 'Category.LineAlt.Text'),
-        text_hover: find(BAKED_ROW_500, 'Category.LineAlt.Text_Hover'),
-        text_selected: find(BAKED_ROW_508, 'Category.LineAlt.Text_Selected'),
-        button: find(BAKED_ROW_508, 'Category.LineAlt.Button'),
-        button_hover: find(BAKED_ROW_500, 'Category.LineAlt.Button_Hover'),
-        button_selected: find(BAKED_ROW_500, 'Category.LineAlt.Button_Selected'),
+        text: find(activeRow500, 'Category.LineAlt.Text'),
+        text_hover: find(activeRow500, 'Category.LineAlt.Text_Hover'),
+        text_selected: find(activeRow508, 'Category.LineAlt.Text_Selected'),
+        button: find(activeRow508, 'Category.LineAlt.Button'),
+        button_hover: find(activeRow500, 'Category.LineAlt.Button_Hover'),
+        button_selected: find(activeRow500, 'Category.LineAlt.Button_Selected'),
       },
     },
   };

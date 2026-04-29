@@ -71,7 +71,10 @@ export class TextBox extends Label {
     this.setTabable(true);
     this.setAlignment(Pos.Left | Pos.CenterV);
     this.setShouldDrawBackground(true);
-    this.setTextColor(color(50, 50, 50, 255));
+    // No explicit setTextColor — Text falls back to
+    // `skin.colors.label.default`, which tracks the active theme. The
+    // earlier hardcoded #323232 looked fine on a light background but
+    // was unreadable in dark mode.
   }
 
   // =====================================================================

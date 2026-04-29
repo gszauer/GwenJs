@@ -22,7 +22,7 @@ import type { WebGL2Renderer } from '../renderer/WebGL2Renderer';
 import type { Base } from '../controls/Base';
 import { DynamicSkin, type RegionInfo, type SkinColors } from './DynamicSkin';
 import { font, type Font } from './FontAtlas';
-import { PALETTE } from './AtlasRegions';
+import { PALETTE, type Palette } from './AtlasRegions';
 
 // Helper — convert a '#rrggbb' or '#rgb' palette string into the byte-Color
 // the renderer expects. Inlined here so the skin can pull palette values
@@ -83,6 +83,21 @@ export class Skin {
 
   get colors(): SkinColors {
     return this.dynamicSkin.colors;
+  }
+
+  /**
+   * Swap the active palette and re-paint the atlas. Use the stock
+   * `LIGHT_PALETTE` / `DARK_PALETTE` exports from `AtlasRegions`, or
+   * supply your own object that satisfies the `Palette` shape.
+   * Texture handle stays stable; controls keep working without
+   * re-construction.
+   */
+  setTheme(palette: Palette): void {
+    this.dynamicSkin.setTheme(palette);
+  }
+
+  getPalette(): Palette {
+    return this.dynamicSkin.getPalette();
   }
 
   // ======================================================================
@@ -676,7 +691,8 @@ export class Skin {
     // "stripe" running down the side rather than an inset highlight.
     const r = ctrl.getRenderBounds();
     const renderer = this.renderer;
-    renderer.setDrawColor(paletteColor(PALETTE.menuStripBg));
+    // Use the active palette so theme switches re-color the strip.
+    renderer.setDrawColor(paletteColor(this.dynamicSkin.getPalette().menuStripBg));
     renderer.drawFilledRect(r);
     // Top highlight (1px white).
     renderer.setDrawColor(color(255, 255, 255, 255));
