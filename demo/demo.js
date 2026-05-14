@@ -9511,6 +9511,10 @@ void main() {
       this._columns = 1;
       this._radioMode = false;
       this._activeButton = null;
+      this._sectionMode = false;
+      // Sections are populated only while `_sectionMode` is on. Index 0 is
+      // the implicit first section; each subsequent separator opens one more.
+      this._sections = [];
       this.setPadding(margin(BAR_PADDING, BAR_PADDING, BAR_PADDING, BAR_PADDING));
       this.setSize(200, this._itemSize + BAR_PADDING * 2);
     }
@@ -9580,6 +9584,8 @@ void main() {
       if (this._radioMode === b) return;
       this._radioMode = b;
       if (!b) return;
+      this._sectionMode = false;
+      this._sections = [];
       let firstActive = null;
       for (const c of this.children) {
         if (c instanceof ActionBarButton) {
@@ -9597,13 +9603,101 @@ void main() {
     isRadioMode() {
       return this._radioMode;
     }
+    // =====================================================================
+    // Section mode — separators delimit independent groups; each section
+    // can be a radio group or a normal mixed group.
+    // =====================================================================
+    /**
+     * Turn section mode on or off. While on, each separator added to the
+     * bar marks a section boundary, and each section can independently be
+     * a radio group (one active button) or a normal group (independent
+     * toggles / one-shots). Use `beginSection({ radio })` to declare a
+     * section's behaviour explicitly. Enabling section mode disables radio
+     * mode (and vice versa).
+     */
+    setSectionMode(b) {
+      if (this._sectionMode === b) return;
+      this._sectionMode = b;
+      if (!b) {
+        this._sections = [];
+        return;
+      }
+      this._radioMode = false;
+      this._sections = [{ radio: false, active: null }];
+      for (const c of this.children) {
+        if (c instanceof ActionBarSeparator) {
+          this._sections.push({ radio: false, active: null });
+        }
+      }
+    }
+    isSectionMode() {
+      return this._sectionMode;
+    }
+    /**
+     * Open a new section. The first call configures the implicit section 0
+     * (no separator inserted); each subsequent call inserts an
+     * `ActionBarSeparator` and starts a fresh section. Buttons added after
+     * this call belong to the newly-opened section until the next
+     * `beginSection` / `addSeparator`.
+     *
+     * Auto-enables section mode if it isn't already on.
+     */
+    beginSection(opts = {}) {
+      if (!this._sectionMode) this.setSectionMode(true);
+      const radio = opts.radio ?? false;
+      const noContent = !this.children.some(
+        (c) => c instanceof ActionBarButton || c instanceof ActionBarSeparator
+      );
+      if (noContent && this._sections.length === 1) {
+        this._sections[0].radio = radio;
+        return;
+      }
+      this.addSeparator();
+      this._sections[this._sections.length - 1].radio = radio;
+    }
+    getSectionCount() {
+      return this._sections.length;
+    }
+    /**
+     * The active button within `idx`, or null if that section has no
+     * active button (either it's a normal section, or the user hasn't
+     * clicked anything in it yet).
+     */
+    getActiveInSection(idx) {
+      if (idx < 0 || idx >= this._sections.length) return null;
+      return this._sections[idx].active;
+    }
+    /**
+     * Which section index does `btn` live in? Walks children in z-order
+     * counting separators. Returns -1 if `btn` isn't a child.
+     */
+    sectionIndexFor(btn) {
+      let idx = 0;
+      for (const c of this.children) {
+        if (c === btn) return idx;
+        if (c instanceof ActionBarSeparator) idx++;
+      }
+      return -1;
+    }
     /**
      * Programmatically promote `btn` to the active selection (or pass
      * `null` to clear). Honours the radio rule: previous active is
      * deactivated. Called automatically by the radio enforcement when a
-     * user clicks a button.
+     * user clicks a button. In section mode the previous-active scope is
+     * the button's own section, not the whole bar.
      */
     setActiveButton(btn) {
+      if (this._sectionMode) {
+        if (!btn) return;
+        const idx = this.sectionIndexFor(btn);
+        if (idx < 0 || !this._sections[idx].radio) return;
+        const prev2 = this._sections[idx].active;
+        if (prev2 === btn) return;
+        this._sections[idx].active = btn;
+        btn.setToggleState(true);
+        if (prev2 && prev2 !== btn) prev2.setToggleState(false);
+        return;
+      }
       if (this._activeButton === btn) return;
       const prev = this._activeButton;
       this._activeButton = btn;
@@ -9630,17 +9724,28 @@ void main() {
       }
       b.setSize(this._itemSize, this._itemSize);
       this.attachRadioHandlers(b);
-      if (this._radioMode) b.setIsToggle(true);
+      if (this._radioMode) {
+        b.setIsToggle(true);
+      } else if (this._sectionMode) {
+        const last = this._sections[this._sections.length - 1];
+        if (last && last.radio) b.setIsToggle(true);
+      }
       this.dockChild(b);
       return b;
     }
     /**
-     * Add a thin divider between two groups of items.
+     * Add a thin divider between two groups of items. In section mode this
+     * also opens a new section, inheriting the radio setting of the section
+     * it just closed (use `beginSection` to override).
      */
     addSeparator() {
       const s = new ActionBarSeparator(this);
       s.setSize(8, 8);
       this.dockChild(s);
+      if (this._sectionMode) {
+        const prev = this._sections[this._sections.length - 1];
+        this._sections.push({ radio: prev ? prev.radio : false, active: null });
+      }
       return s;
     }
     /**
@@ -9672,11 +9777,20 @@ void main() {
     // =====================================================================
     // Internal — radio enforcement
     // =====================================================================
-    // Subscribe once per button. Handlers bail when radio mode is off, so
-    // we can wire all buttons unconditionally and just flip the flag at
-    // the bar level when needed.
+    // Subscribe once per button. Handlers bail when neither radio mode
+    // nor a radio section applies, so we can wire all buttons
+    // unconditionally and just flip the flag at the bar level when needed.
     attachRadioHandlers(btn) {
       btn.onToggleOn.on(() => {
+        if (this._sectionMode) {
+          const idx = this.sectionIndexFor(btn);
+          if (idx < 0 || !this._sections[idx].radio) return;
+          const prev2 = this._sections[idx].active;
+          if (prev2 === btn) return;
+          this._sections[idx].active = btn;
+          if (prev2) prev2.setToggleState(false);
+          return;
+        }
         if (!this._radioMode) return;
         const prev = this._activeButton;
         if (prev === btn) return;
@@ -9684,6 +9798,12 @@ void main() {
         if (prev) prev.setToggleState(false);
       });
       btn.onToggleOff.on(() => {
+        if (this._sectionMode) {
+          const idx = this.sectionIndexFor(btn);
+          if (idx < 0 || !this._sections[idx].radio) return;
+          if (this._sections[idx].active === btn) btn.setToggleState(true);
+          return;
+        }
         if (!this._radioMode) return;
         if (this._activeButton === btn) btn.setToggleState(true);
       });
@@ -14558,12 +14678,56 @@ void main() {
     const redoBtn = quick.addButton("Redo");
     redoBtn.setSize(56, 28);
     redoBtn.onPress.on(() => log("Action: Redo"));
+    const sectioned = new ActionBar(p);
+    sectioned.setBounds(130, 110, 440, 32);
+    sectioned.setSectionMode(true);
+    sectioned.beginSection({ radio: true });
+    const alignLeft = registerThemedIconButton(sectioned.addButton("L"));
+    alignLeft.setToolTip("Align Left");
+    alignLeft.setToggleState(true);
+    alignLeft.onPress.on(() => log("Align: Left"));
+    const alignCenter = registerThemedIconButton(sectioned.addButton("C"));
+    alignCenter.setToolTip("Align Center");
+    alignCenter.onPress.on(() => log("Align: Center"));
+    const alignRight = registerThemedIconButton(sectioned.addButton("R"));
+    alignRight.setToolTip("Align Right");
+    alignRight.onPress.on(() => log("Align: Right"));
+    sectioned.beginSection({ radio: false });
+    const secBold = registerThemedIconButton(sectioned.addButton("", boldIcon));
+    secBold.setIsToggle(true);
+    secBold.setToolTip("Bold");
+    secBold.onPress.on(() => log(`Sec-Bold: ${secBold.getToggleState() ? "on" : "off"}`));
+    const secItalic = registerThemedIconButton(sectioned.addButton("", italicIcon));
+    secItalic.setIsToggle(true);
+    secItalic.setToolTip("Italic");
+    secItalic.onPress.on(() => log(`Sec-Italic: ${secItalic.getToggleState() ? "on" : "off"}`));
+    const secUnder = registerThemedIconButton(sectioned.addButton("", underlineIcon));
+    secUnder.setIsToggle(true);
+    secUnder.setToolTip("Underline");
+    secUnder.onPress.on(() => log(`Sec-Underline: ${secUnder.getToggleState() ? "on" : "off"}`));
+    sectioned.beginSection({ radio: true });
+    const zoomFit = registerThemedIconButton(sectioned.addButton("Fit"));
+    zoomFit.setSize(40, 28);
+    zoomFit.setToolTip("Fit");
+    zoomFit.setToggleState(true);
+    zoomFit.onPress.on(() => log("Zoom: Fit"));
+    const zoom100 = registerThemedIconButton(sectioned.addButton("100"));
+    zoom100.setSize(40, 28);
+    zoom100.setToolTip("100%");
+    zoom100.onPress.on(() => log("Zoom: 100%"));
+    const zoom200 = registerThemedIconButton(sectioned.addButton("200"));
+    zoom200.setSize(40, 28);
+    zoom200.setToolTip("200%");
+    zoom200.onPress.on(() => log("Zoom: 200%"));
     const note = new Label(p);
     note.setText("Single-column palette \u2199   Two-column palette \u2199   Horizontal quick-action bar \u2191");
     note.setBounds(130, 60, 480, 18);
     const note2 = new Label(p);
     note2.setText("Both palettes are in radio mode \u2014 only one tool active at a time.");
     note2.setBounds(130, 78, 480, 18);
+    const note3 = new Label(p);
+    note3.setText("Section-mode bar \u2193: [align L/C/R radio] \xB7 [bold/italic/underline toggles] \xB7 [zoom radio]");
+    note3.setBounds(130, 96, 540, 18);
   });
   addDemo(containersCat, "ScrollControl", (p) => {
     const sc = new ScrollControl(p);

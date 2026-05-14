@@ -492,6 +492,253 @@ test.describe('ActionBar', () => {
   });
 
   // =========================================================================
+  // 15. setSectionMode(true) initialises one section + disables radio mode.
+  // =========================================================================
+
+  test('15 — setSectionMode(true): initialises one section; disables radio mode', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setRadioMode(true);
+      bar.setSectionMode(true);
+      const r = {
+        sectionMode: bar.isSectionMode(),
+        radioMode: bar.isRadioMode(),
+        sectionCount: bar.getSectionCount(),
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.sectionMode).toBe(true);
+    expect(result.radioMode).toBe(false);
+    expect(result.sectionCount).toBe(1);
+  });
+
+  // =========================================================================
+  // 16. beginSection: first call configures section 0 without separator;
+  //     subsequent calls auto-insert a separator and open a new section.
+  // =========================================================================
+
+  test('16 — beginSection: first call no-separator; later calls insert separator', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+
+      bar.beginSection({ radio: true });
+      bar.addButton('A');
+      bar.addButton('B');
+      const sepsAfterFirst = bar.children.filter((c: any) => c instanceof G.ActionBarSeparator).length;
+
+      bar.beginSection({ radio: false });
+      bar.addButton('C');
+      const sepsAfterSecond = bar.children.filter((c: any) => c instanceof G.ActionBarSeparator).length;
+
+      bar.beginSection({ radio: true });
+      bar.addButton('D');
+      const sepsAfterThird = bar.children.filter((c: any) => c instanceof G.ActionBarSeparator).length;
+
+      const r = {
+        sepsAfterFirst,
+        sepsAfterSecond,
+        sepsAfterThird,
+        sectionCount: bar.getSectionCount(),
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.sepsAfterFirst).toBe(0);
+    expect(result.sepsAfterSecond).toBe(1);
+    expect(result.sepsAfterThird).toBe(2);
+    expect(result.sectionCount).toBe(3);
+  });
+
+  // =========================================================================
+  // 17. Radio behaviour is scoped to the button's section — activating one
+  //     in section 1 does NOT deactivate the active button in section 0.
+  // =========================================================================
+
+  test('17 — section radio is isolated per-section', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+
+      bar.beginSection({ radio: true });
+      const a = bar.addButton('A');
+      const b = bar.addButton('B');
+
+      bar.beginSection({ radio: true });
+      const c = bar.addButton('C');
+      const d = bar.addButton('D');
+
+      a.setToggleState(true);
+      c.setToggleState(true);
+
+      // Toggle a different button in section 1 — section 0 should be untouched.
+      d.setToggleState(true);
+
+      const r = {
+        aOn: a.getToggleState(),
+        bOn: b.getToggleState(),
+        cOn: c.getToggleState(),
+        dOn: d.getToggleState(),
+        sec0Active: bar.getActiveInSection(0) === a,
+        sec1Active: bar.getActiveInSection(1) === d,
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.aOn).toBe(true);
+    expect(result.bOn).toBe(false);
+    expect(result.cOn).toBe(false);
+    expect(result.dOn).toBe(true);
+    expect(result.sec0Active).toBe(true);
+    expect(result.sec1Active).toBe(true);
+  });
+
+  // =========================================================================
+  // 18. Mixing radio + normal sections: in a non-radio section, multiple
+  //     buttons can be on simultaneously and getActiveInSection stays null.
+  // =========================================================================
+
+  test('18 — non-radio section allows multiple active toggles independently', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+
+      bar.beginSection({ radio: true });
+      const a = bar.addButton('A');
+
+      bar.beginSection({ radio: false });
+      const bold = bar.addButton('Bold');
+      const italic = bar.addButton('Italic');
+      bold.setIsToggle(true);
+      italic.setIsToggle(true);
+
+      a.setToggleState(true);
+      bold.setToggleState(true);
+      italic.setToggleState(true);
+
+      const r = {
+        aOn: a.getToggleState(),
+        boldOn: bold.getToggleState(),
+        italicOn: italic.getToggleState(),
+        sec1Active: bar.getActiveInSection(1),
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.aOn).toBe(true);
+    expect(result.boldOn).toBe(true);
+    expect(result.italicOn).toBe(true);
+    expect(result.sec1Active).toBe(null);
+  });
+
+  // =========================================================================
+  // 19. In a radio section, the active button cannot deactivate itself.
+  // =========================================================================
+
+  test('19 — radio section: active button cannot deactivate itself', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+
+      bar.beginSection({ radio: true });
+      const a = bar.addButton('A');
+      a.setToggleState(true);
+      a.setToggleState(false);
+
+      const r = {
+        stateAfter: a.getToggleState(),
+        active: bar.getActiveInSection(0) === a,
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.stateAfter).toBe(true);
+    expect(result.active).toBe(true);
+  });
+
+  // =========================================================================
+  // 20. addSeparator() in section mode inherits the previous section's
+  //     radio setting so callers can mix beginSection and addSeparator.
+  // =========================================================================
+
+  test('20 — addSeparator inherits prior section radio setting in section mode', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+      bar.beginSection({ radio: true });
+      bar.addButton('A');
+      bar.addSeparator();  // should open section 1 inheriting radio=true
+      bar.addButton('B');
+      bar.addButton('C');
+
+      const r = {
+        sectionCount: bar.getSectionCount(),
+      };
+
+      // Verify radio behaviour in the inherited section.
+      const buttons = bar.children.filter((c: any) => c instanceof G.ActionBarButton);
+      buttons[1].setToggleState(true);
+      buttons[2].setToggleState(true);
+
+      const r2 = {
+        ...r,
+        b1On: buttons[1].getToggleState(),
+        b2On: buttons[2].getToggleState(),
+        sec1Active: bar.getActiveInSection(1) === buttons[2],
+      };
+      bar.dispose();
+      return r2;
+    });
+    expect(result.sectionCount).toBe(2);
+    expect(result.b1On).toBe(false);
+    expect(result.b2On).toBe(true);
+    expect(result.sec1Active).toBe(true);
+  });
+
+  // =========================================================================
+  // 21. setRadioMode(true) disables section mode and clears its state.
+  // =========================================================================
+
+  test('21 — setRadioMode(true) tears down section mode', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const G = (window as any).Gwen;
+      const canvas = (window as any).gwenCanvas;
+      const bar = new G.ActionBar(canvas);
+      bar.setSectionMode(true);
+      bar.beginSection({ radio: true });
+      bar.addButton('A');
+      bar.beginSection({ radio: false });
+      bar.addButton('B');
+
+      bar.setRadioMode(true);
+
+      const r = {
+        sectionMode: bar.isSectionMode(),
+        radioMode: bar.isRadioMode(),
+        sectionCount: bar.getSectionCount(),
+      };
+      bar.dispose();
+      return r;
+    });
+    expect(result.sectionMode).toBe(false);
+    expect(result.radioMode).toBe(true);
+    expect(result.sectionCount).toBe(0);
+  });
+
+  // =========================================================================
   // 10. Render with three items produces non-background pixels — proves
   //     drawMenuStrip + button skinning ran end-to-end.
   // =========================================================================

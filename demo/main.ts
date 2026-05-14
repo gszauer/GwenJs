@@ -1204,6 +1204,59 @@ addDemo(containersCat, 'ActionBar', (p) => {
   redoBtn.setSize(56, 28);
   redoBtn.onPress.on(() => log('Action: Redo'));
 
+  // ── Section-mode horizontal bar — three sections separated by dividers.
+  //   Sec 0 (radio):  alignment buttons — one selected at a time.
+  //   Sec 1 (normal): formatting toggles — independent on/off.
+  //   Sec 2 (radio):  zoom level — one selected at a time, independent of Sec 0.
+  // Demonstrates that radio scoping happens per section, not bar-wide.
+  const sectioned = new Gwen.ActionBar(p);
+  sectioned.setBounds(130, 110, 440, 32);
+  sectioned.setSectionMode(true);
+
+  // Section 0 — alignment (radio).
+  sectioned.beginSection({ radio: true });
+  const alignLeft = registerThemedIconButton(sectioned.addButton('L'));
+  alignLeft.setToolTip('Align Left');
+  alignLeft.setToggleState(true);
+  alignLeft.onPress.on(() => log('Align: Left'));
+  const alignCenter = registerThemedIconButton(sectioned.addButton('C'));
+  alignCenter.setToolTip('Align Center');
+  alignCenter.onPress.on(() => log('Align: Center'));
+  const alignRight = registerThemedIconButton(sectioned.addButton('R'));
+  alignRight.setToolTip('Align Right');
+  alignRight.onPress.on(() => log('Align: Right'));
+
+  // Section 1 — formatting (normal: each toggle is independent).
+  sectioned.beginSection({ radio: false });
+  const secBold = registerThemedIconButton(sectioned.addButton('', boldIcon));
+  secBold.setIsToggle(true);
+  secBold.setToolTip('Bold');
+  secBold.onPress.on(() => log(`Sec-Bold: ${secBold.getToggleState() ? 'on' : 'off'}`));
+  const secItalic = registerThemedIconButton(sectioned.addButton('', italicIcon));
+  secItalic.setIsToggle(true);
+  secItalic.setToolTip('Italic');
+  secItalic.onPress.on(() => log(`Sec-Italic: ${secItalic.getToggleState() ? 'on' : 'off'}`));
+  const secUnder = registerThemedIconButton(sectioned.addButton('', underlineIcon));
+  secUnder.setIsToggle(true);
+  secUnder.setToolTip('Underline');
+  secUnder.onPress.on(() => log(`Sec-Underline: ${secUnder.getToggleState() ? 'on' : 'off'}`));
+
+  // Section 2 — zoom (radio, independent of Section 0).
+  sectioned.beginSection({ radio: true });
+  const zoomFit = registerThemedIconButton(sectioned.addButton('Fit'));
+  zoomFit.setSize(40, 28);
+  zoomFit.setToolTip('Fit');
+  zoomFit.setToggleState(true);
+  zoomFit.onPress.on(() => log('Zoom: Fit'));
+  const zoom100 = registerThemedIconButton(sectioned.addButton('100'));
+  zoom100.setSize(40, 28);
+  zoom100.setToolTip('100%');
+  zoom100.onPress.on(() => log('Zoom: 100%'));
+  const zoom200 = registerThemedIconButton(sectioned.addButton('200'));
+  zoom200.setSize(40, 28);
+  zoom200.setToolTip('200%');
+  zoom200.onPress.on(() => log('Zoom: 200%'));
+
   // Caption beside the canvas area so the user knows what the demo is about.
   const note = new Gwen.Label(p);
   note.setText('Single-column palette ↙   Two-column palette ↙   Horizontal quick-action bar ↑');
@@ -1211,6 +1264,9 @@ addDemo(containersCat, 'ActionBar', (p) => {
   const note2 = new Gwen.Label(p);
   note2.setText('Both palettes are in radio mode — only one tool active at a time.');
   note2.setBounds(130, 78, 480, 18);
+  const note3 = new Gwen.Label(p);
+  note3.setText('Section-mode bar ↓: [align L/C/R radio] · [bold/italic/underline toggles] · [zoom radio]');
+  note3.setBounds(130, 96, 540, 18);
 });
 
 addDemo(containersCat, 'ScrollControl', (p) => {

@@ -28,6 +28,16 @@
 // the active one re-activates it (you can't end up with no tool
 // selected). Useful for tool palettes; ignored when off.
 //
+// Section mode: `setSectionMode(true)` lets each separator delimit an
+// independent group of items. Each section is configured at construction
+// via `beginSection({ radio })`: a radio section keeps exactly one of its
+// own buttons active (independent of other sections); a normal section
+// behaves like an unconstrained group of toggles / one-shot buttons. The
+// first `beginSection` call configures the implicit section 0; later
+// calls auto-insert a separator and open a fresh section. Radio mode and
+// section mode are mutually exclusive — turning either on disables the
+// other.
+//
 // Action bars compose freely with the rest of the layout system:
 // dockable into a `DockBase`, parentable to a `WindowControl`, or just
 // dropped onto a canvas as a free-floating bar.
@@ -90,12 +100,21 @@ export class ActionBarSeparator extends Base {
 // ActionBar
 // ---------------------------------------------------------------------------
 
+interface ActionBarSection {
+  radio: boolean;
+  active: ActionBarButton | null;
+}
+
 export class ActionBar extends Base {
   protected _vertical = false;
   protected _itemSize = DEFAULT_ITEM_SIZE;
   protected _columns = 1;
   protected _radioMode = false;
   protected _activeButton: ActionBarButton | null = null;
+  protected _sectionMode = false;
+  // Sections are populated only while `_sectionMode` is on. Index 0 is
+  // the implicit first section; each subsequent separator opens one more.
+  protected _sections: ActionBarSection[] = [];
 
   constructor(parent: Base | null) {
     super(parent);
@@ -179,6 +198,11 @@ export class ActionBar extends Base {
     if (this._radioMode === b) return;
     this._radioMode = b;
     if (!b) return;
+    // Section mode and radio mode are mutually exclusive: enabling radio
+    // mode tears down section bookkeeping and treats the whole bar as a
+    // single radio group.
+    this._sectionMode = false;
+    this._sections = [];
     // Promote existing buttons to toggleable; pick the first
     // already-on as the active and turn the rest off.
     let firstActive: ActionBarButton | null = null;
@@ -200,13 +224,121 @@ export class ActionBar extends Base {
     return this._radioMode;
   }
 
+  // =====================================================================
+  // Section mode — separators delimit independent groups; each section
+  // can be a radio group or a normal mixed group.
+  // =====================================================================
+
+  /**
+   * Turn section mode on or off. While on, each separator added to the
+   * bar marks a section boundary, and each section can independently be
+   * a radio group (one active button) or a normal group (independent
+   * toggles / one-shots). Use `beginSection({ radio })` to declare a
+   * section's behaviour explicitly. Enabling section mode disables radio
+   * mode (and vice versa).
+   */
+  setSectionMode(b: boolean): void {
+    if (this._sectionMode === b) return;
+    this._sectionMode = b;
+    if (!b) {
+      this._sections = [];
+      return;
+    }
+    this._radioMode = false;
+    // Initialise with a single section spanning whatever's already in
+    // the bar. Defaults to non-radio so legacy buttons keep their
+    // existing independent behaviour.
+    this._sections = [{ radio: false, active: null }];
+    // Walk children: every existing separator opens an additional
+    // section. Keeps the bookkeeping consistent if section mode is
+    // toggled after the bar is partially populated.
+    for (const c of this.children) {
+      if (c instanceof ActionBarSeparator) {
+        this._sections.push({ radio: false, active: null });
+      }
+    }
+  }
+
+  isSectionMode(): boolean {
+    return this._sectionMode;
+  }
+
+  /**
+   * Open a new section. The first call configures the implicit section 0
+   * (no separator inserted); each subsequent call inserts an
+   * `ActionBarSeparator` and starts a fresh section. Buttons added after
+   * this call belong to the newly-opened section until the next
+   * `beginSection` / `addSeparator`.
+   *
+   * Auto-enables section mode if it isn't already on.
+   */
+  beginSection(opts: { radio?: boolean } = {}): void {
+    if (!this._sectionMode) this.setSectionMode(true);
+    const radio = opts.radio ?? false;
+    // First-section path: no separator yet, no buttons yet → just
+    // configure section 0 in place. Detects "first" by content rather
+    // than section count so callers can call `beginSection` once at the
+    // top of construction without worrying about whether they've added
+    // anything.
+    const noContent = !this.children.some(
+      (c) => c instanceof ActionBarButton || c instanceof ActionBarSeparator,
+    );
+    if (noContent && this._sections.length === 1) {
+      this._sections[0].radio = radio;
+      return;
+    }
+    // Otherwise insert a separator (which itself pushes a new section)
+    // and reconfigure the section it just opened.
+    this.addSeparator();
+    this._sections[this._sections.length - 1].radio = radio;
+  }
+
+  getSectionCount(): number {
+    return this._sections.length;
+  }
+
+  /**
+   * The active button within `idx`, or null if that section has no
+   * active button (either it's a normal section, or the user hasn't
+   * clicked anything in it yet).
+   */
+  getActiveInSection(idx: number): ActionBarButton | null {
+    if (idx < 0 || idx >= this._sections.length) return null;
+    return this._sections[idx].active;
+  }
+
+  /**
+   * Which section index does `btn` live in? Walks children in z-order
+   * counting separators. Returns -1 if `btn` isn't a child.
+   */
+  protected sectionIndexFor(btn: ActionBarButton): number {
+    let idx = 0;
+    for (const c of this.children) {
+      if (c === btn) return idx;
+      if (c instanceof ActionBarSeparator) idx++;
+    }
+    return -1;
+  }
+
   /**
    * Programmatically promote `btn` to the active selection (or pass
    * `null` to clear). Honours the radio rule: previous active is
    * deactivated. Called automatically by the radio enforcement when a
-   * user clicks a button.
+   * user clicks a button. In section mode the previous-active scope is
+   * the button's own section, not the whole bar.
    */
   setActiveButton(btn: ActionBarButton | null): void {
+    if (this._sectionMode) {
+      if (!btn) return;
+      const idx = this.sectionIndexFor(btn);
+      if (idx < 0 || !this._sections[idx].radio) return;
+      const prev = this._sections[idx].active;
+      if (prev === btn) return;
+      this._sections[idx].active = btn;
+      btn.setToggleState(true);
+      if (prev && prev !== btn) prev.setToggleState(false);
+      return;
+    }
     if (this._activeButton === btn) return;
     const prev = this._activeButton;
     this._activeButton = btn;
@@ -236,18 +368,31 @@ export class ActionBar extends Base {
     }
     b.setSize(this._itemSize, this._itemSize);
     this.attachRadioHandlers(b);
-    if (this._radioMode) b.setIsToggle(true);
+    if (this._radioMode) {
+      b.setIsToggle(true);
+    } else if (this._sectionMode) {
+      // Auto-toggle inside a radio section so the click immediately
+      // participates in the section's one-of selection.
+      const last = this._sections[this._sections.length - 1];
+      if (last && last.radio) b.setIsToggle(true);
+    }
     this.dockChild(b);
     return b;
   }
 
   /**
-   * Add a thin divider between two groups of items.
+   * Add a thin divider between two groups of items. In section mode this
+   * also opens a new section, inheriting the radio setting of the section
+   * it just closed (use `beginSection` to override).
    */
   addSeparator(): ActionBarSeparator {
     const s = new ActionBarSeparator(this);
     s.setSize(8, 8);
     this.dockChild(s);
+    if (this._sectionMode) {
+      const prev = this._sections[this._sections.length - 1];
+      this._sections.push({ radio: prev ? prev.radio : false, active: null });
+    }
     return s;
   }
 
@@ -282,11 +427,20 @@ export class ActionBar extends Base {
   // Internal — radio enforcement
   // =====================================================================
 
-  // Subscribe once per button. Handlers bail when radio mode is off, so
-  // we can wire all buttons unconditionally and just flip the flag at
-  // the bar level when needed.
+  // Subscribe once per button. Handlers bail when neither radio mode
+  // nor a radio section applies, so we can wire all buttons
+  // unconditionally and just flip the flag at the bar level when needed.
   protected attachRadioHandlers(btn: ActionBarButton): void {
     btn.onToggleOn.on(() => {
+      if (this._sectionMode) {
+        const idx = this.sectionIndexFor(btn);
+        if (idx < 0 || !this._sections[idx].radio) return;
+        const prev = this._sections[idx].active;
+        if (prev === btn) return;
+        this._sections[idx].active = btn;
+        if (prev) prev.setToggleState(false);
+        return;
+      }
       if (!this._radioMode) return;
       const prev = this._activeButton;
       if (prev === btn) return;
@@ -294,8 +448,15 @@ export class ActionBar extends Base {
       if (prev) prev.setToggleState(false);
     });
     btn.onToggleOff.on(() => {
+      if (this._sectionMode) {
+        const idx = this.sectionIndexFor(btn);
+        if (idx < 0 || !this._sections[idx].radio) return;
+        // Active button can't deactivate itself in a radio section —
+        // restore. Mirrors the legacy radio-mode rule.
+        if (this._sections[idx].active === btn) btn.setToggleState(true);
+        return;
+      }
       if (!this._radioMode) return;
-      // Active button can't deactivate itself in radio mode — restore.
       if (this._activeButton === btn) btn.setToggleState(true);
     });
   }
