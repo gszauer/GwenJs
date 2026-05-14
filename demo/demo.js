@@ -14037,19 +14037,62 @@ void main() {
     }
   });
   addDemo(controlsCat, "CrossSplitter", (p) => {
-    const sp = new CrossSplitter(p);
-    sp.setBounds(10, 10, 500, 300);
     const colors = [
       color(170, 80, 80, 255),
       color(80, 170, 80, 255),
       color(80, 80, 170, 255),
       color(170, 170, 80, 255)
     ];
-    for (let i = 0; i < 4; i++) {
-      const leaf = new ColorDisplay(sp);
-      leaf.setColor(colors[i]);
-      sp.setPanel(i, leaf);
-    }
+    const stage = new Base(p);
+    stage.setBounds(10, 10, 500, 300);
+    let active = null;
+    const rebuild = (mode) => {
+      if (active) {
+        active.dispose();
+        active = null;
+      }
+      if (mode === "cross") {
+        const sp = new CrossSplitter(stage);
+        sp.dock(Pos.Fill);
+        for (let i = 0; i < 4; i++) {
+          const leaf = new ColorDisplay(sp);
+          leaf.setColor(colors[i]);
+          sp.setPanel(i, leaf);
+        }
+        active = sp;
+      } else if (mode === "horizontal") {
+        const sp = new SplitterHorizontal(stage);
+        sp.dock(Pos.Fill);
+        const a = new ColorDisplay(null);
+        a.setColor(colors[0]);
+        const b = new ColorDisplay(null);
+        b.setColor(colors[1]);
+        sp.setPanels(a, b);
+        active = sp;
+      } else {
+        const sp = new SplitterVertical(stage);
+        sp.dock(Pos.Fill);
+        const a = new ColorDisplay(null);
+        a.setColor(colors[0]);
+        const b = new ColorDisplay(null);
+        b.setColor(colors[1]);
+        sp.setPanels(a, b);
+        active = sp;
+      }
+    };
+    rebuild("cross");
+    const group = new GroupBox(p);
+    group.setBounds(520, 10, 160, 90);
+    group.setText("Splitter Mode");
+    const combo = new ComboBox(group.getInnerPanel() ?? group);
+    combo.setBounds(10, 10, 130, 22);
+    combo.addItem("Cross", "cross");
+    combo.addItem("Horizontal", "horizontal");
+    combo.addItem("Vertical", "vertical");
+    combo.onSelection.on(() => {
+      const sel = combo.getSelectedItem();
+      if (sel) rebuild(sel.getName());
+    });
   });
   addDemo(controlsCat, "RadioButton", (p) => {
     const rbc = new RadioButtonController(p);

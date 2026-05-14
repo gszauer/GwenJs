@@ -623,19 +623,75 @@ addDemo(controlsCat, 'ListBox', (p) => {
 });
 
 addDemo(controlsCat, 'CrossSplitter', (p) => {
-  const sp = new Gwen.CrossSplitter(p);
-  sp.setBounds(10, 10, 500, 300);
   const colors = [
     Gwen.color(170, 80, 80, 255),
     Gwen.color(80, 170, 80, 255),
     Gwen.color(80, 80, 170, 255),
     Gwen.color(170, 170, 80, 255),
   ];
-  for (let i = 0; i < 4; i++) {
-    const leaf = new Gwen.ColorDisplay(sp);
-    leaf.setColor(colors[i]);
-    sp.setPanel(i, leaf);
-  }
+
+  // Stage hosts whichever splitter the combo currently selects. Rebuilding
+  // disposes the previous splitter subtree so we don't leak panels.
+  const stage = new Gwen.Base(p);
+  stage.setBounds(10, 10, 500, 300);
+
+  let active: Gwen.Base | null = null;
+
+  const rebuild = (mode: string): void => {
+    if (active) {
+      active.dispose();
+      active = null;
+    }
+    if (mode === 'cross') {
+      const sp = new Gwen.CrossSplitter(stage);
+      sp.dock(Gwen.Pos.Fill);
+      for (let i = 0; i < 4; i++) {
+        const leaf = new Gwen.ColorDisplay(sp);
+        leaf.setColor(colors[i]);
+        sp.setPanel(i, leaf);
+      }
+      active = sp;
+    } else if (mode === 'horizontal') {
+      // Horizontal split (vertical bar): two panels side-by-side.
+      const sp = new Gwen.SplitterHorizontal(stage);
+      sp.dock(Gwen.Pos.Fill);
+      const a = new Gwen.ColorDisplay(null);
+      a.setColor(colors[0]);
+      const b = new Gwen.ColorDisplay(null);
+      b.setColor(colors[1]);
+      sp.setPanels(a, b);
+      active = sp;
+    } else {
+      // Vertical split (horizontal bar): two panels stacked top/bottom.
+      const sp = new Gwen.SplitterVertical(stage);
+      sp.dock(Gwen.Pos.Fill);
+      const a = new Gwen.ColorDisplay(null);
+      a.setColor(colors[0]);
+      const b = new Gwen.ColorDisplay(null);
+      b.setColor(colors[1]);
+      sp.setPanels(a, b);
+      active = sp;
+    }
+  };
+
+  rebuild('cross');
+
+  // Mode selector on the right. ComboBox.addItem's first entry becomes
+  // the selection without firing onSelection, so the initial 'cross'
+  // state we set above matches what the combo shows.
+  const group = new Gwen.GroupBox(p);
+  group.setBounds(520, 10, 160, 90);
+  group.setText('Splitter Mode');
+
+  const combo = new Gwen.ComboBox(group.getInnerPanel() ?? group);
+  combo.setBounds(10, 10, 130, 22);
+  combo.addItem('Cross', 'cross');
+  combo.addItem('Horizontal', 'horizontal');
+  combo.addItem('Vertical', 'vertical');
+  combo.onSelection.on(() => {
+    const sel = combo.getSelectedItem();
+    if (sel) rebuild(sel.getName());
+  });
 });
 
 addDemo(controlsCat, 'RadioButton', (p) => {
