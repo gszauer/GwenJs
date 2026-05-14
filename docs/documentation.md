@@ -90,7 +90,7 @@ Controls are grouped loosely into families. A one-liner each:
 - **Menus:** `Menu`, `MenuItem`, `MenuDivider`, `MenuStrip`, `ComboBox`.
 - **Tabs:** `TabControl`, `TabButton`, `TabStrip`, `DockedTabControl`, `PageControl`.
 - **Windows:** `WindowControl`, `ResizableControl`, `WindowCloseButton`, `ToolBarStrip`, `ToolBarButton`.
-- **Toolbars:** `ActionBar` (flexible horizontal / vertical toolbar with `addButton` / `addSeparator` / `addItem`), `ActionBarButton`, `ActionBarSeparator`.
+- **Toolbars:** `ActionBar` (flexible horizontal / vertical toolbar with `addButton` / `addSeparator` / `addItem`; `setRadioMode` for bar-wide single-active, or `setSectionMode` + `beginSection({ radio })` for per-section radio/normal groups divided by separators), `ActionBarButton`, `ActionBarSeparator`.
 - **Splitters:** `SplitterBar`, `SplitterVertical`, `SplitterHorizontal`, `CrossSplitter`.
 - **Docking:** `DockBase`.
 - **Colour:** `ColorPicker`, `HSVColorPicker`, `ColorLerpBox`, `ColorSlider`, `ColorDisplay`.

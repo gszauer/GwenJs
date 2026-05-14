@@ -83,7 +83,7 @@ Every public control, its direct base class, primary signals, and purpose. Const
 | `TreeControl` | `TreeNode` | — (inherits) | Scrollable tree root. |
 | `ToolBarButton` | `Button` | — | Toolbar icon button (legacy GWEN port; horizontal-only, 20×20). |
 | `ToolBarStrip` | `Base` | — | Row of ToolBarButtons (legacy GWEN port). |
-| `ActionBar` | `Base` | — | Flexible horizontal/vertical toolbar. `addButton(text, icon?)` → `ActionBarButton`; `addSeparator()`; `addItem(ctrl)` (auto-centers non-square widgets like `ComboBox`). `setVertical(true)` flips orientation; `setItemSize(px)` resizes the slot; `setColumns(n)` lays vertical items in an n-column grid (Photoshop two-column palette); `setRadioMode(true)` enforces single-active toggle behavior across `ActionBarButton` children. |
+| `ActionBar` | `Base` | — | Flexible horizontal/vertical toolbar. `addButton(text, icon?)` → `ActionBarButton`; `addSeparator()`; `addItem(ctrl)` (auto-centers non-square widgets like `ComboBox`). `setVertical(true)` flips orientation; `setItemSize(px)` resizes the slot; `setColumns(n)` lays vertical items in an n-column grid (Photoshop two-column palette); `setRadioMode(true)` enforces single-active toggle behavior across `ActionBarButton` children; `setSectionMode(true)` + `beginSection({ radio })` partitions the bar at each separator into independent radio / normal groups (mutually exclusive with `setRadioMode`). |
 | `ActionBarButton` | `Button` | inherits `onPress` etc. | Square (default 28×28) Button tuned for action-bar slots. Supports text, icon (`setImageTexture`), toggle, tooltip. |
 | `ActionBarSeparator` | `Base` | — | Thin divider; orientation auto-detected from docked size. |
 | `CollapsibleCategory` | `Base` | `onSelection` | Expandable category. Header is left-aligned with a `▼` / `▶` chevron that flips with the toggle state. |
@@ -108,8 +108,8 @@ Every public control, its direct base class, primary signals, and purpose. Const
 | `WindowMinimizeButton` | `Button` | — | Title-bar minimise. |
 | `WindowControl` | `ResizableControl` | `onWindowClosed` | Floating window. |
 | `SplitterBar` | `Dragger` | — | Splitter divider. |
-| `SplitterVertical` | `Base` | — | Two-panel vertical split. |
-| `SplitterHorizontal` | `Base` | — | Two-panel horizontal split. |
+| `SplitterVertical` | `Base` | — | Two-panel split along the vertical axis: horizontal bar, two stacked top/bottom panels. `setPanels(a, b)` + `setScaling(rightSided, size)`. |
+| `SplitterHorizontal` | `Base` | — | Two-panel split along the horizontal axis: vertical bar, two side-by-side left/right panels. Same API. |
 | `CrossSplitter` | `Base` | — | 2×2 split with zoom. |
 | `ColorDisplay` | `Base` | — | Small swatch. |
 | `ColorLerpBox` | `Base` | `onColorChanged` | 2D HSV box. |
@@ -382,7 +382,40 @@ const undoBtn = quick.addButton('Undo');
 undoBtn.setSize(56, 28);
 ```
 
+```ts
+// Section mode — each separator partitions the bar into an independent
+// group. Each section is configured at construction with `beginSection`
+// as either a radio group (one active button) or a normal group
+// (independent toggles / one-shot buttons). Mix and match freely.
+const bar = new Gwen.ActionBar(parent);
+bar.setBounds(0, 0, 440, 32);
+bar.setSectionMode(true);
+
+// Section 0 — alignment (radio: one selected at a time).
+bar.beginSection({ radio: true });
+bar.addButton('L').setToggleState(true);  // start with Left active
+bar.addButton('C');
+bar.addButton('R');
+
+// Section 1 — formatting (normal: any combination of toggles).
+bar.beginSection({ radio: false });
+bar.addButton('', boldIconTex).setIsToggle(true);
+bar.addButton('', italicIconTex).setIsToggle(true);
+
+// Section 2 — zoom (radio again, independent of section 0).
+bar.beginSection({ radio: true });
+bar.addButton('Fit').setToggleState(true);
+bar.addButton('100');
+bar.addButton('200');
+
+// Query active button per section:
+const align = bar.getActiveInSection(0);  // L / C / R or null
+const zoom  = bar.getActiveInSection(2);
+```
+
 The bar's perpendicular dimension auto-tracks `setItemSize(px)`; the primary dimension is caller-controlled (typically `dock(Pos.Top)` for full-width or `dock(Pos.Left)` for full-height). The bar reuses `Skin.drawMenuStrip` for its background so it shares the visual language of the menu / status bars.
+
+Section-mode notes: `beginSection`'s first call configures the implicit section 0 in place (no separator inserted); each subsequent call inserts an `ActionBarSeparator` and opens a new section. A plain `addSeparator()` still works — in section mode it opens a new section inheriting the prior section's radio setting. Radio enforcement is per-section: activating a button in one section never deactivates the active button in another.
 
 ### Pick a file and read its bytes
 
